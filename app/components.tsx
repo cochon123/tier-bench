@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { UserButton, useUser } from "@clerk/nextjs";
 import { Model, Tier, tierMeta } from "./data";
 
 export function Logo() {
@@ -10,6 +11,7 @@ export function Logo() {
 
 export function Header() {
   const path = usePathname();
+  const { isLoaded, user } = useUser();
   return <header className="site-header">
     <Logo />
     <nav aria-label="Main navigation">
@@ -17,7 +19,7 @@ export function Header() {
       <Link className={path.startsWith("/proposals") ? "active" : ""} href="/proposals">Proposals</Link>
       <Link className={path.startsWith("/methodology") ? "active" : ""} href="/methodology">Method</Link>
     </nav>
-    <div className="header-actions"><Link className="header-login" href="/login">Log in</Link><Link className="button header-cta" href="/rank">Make a tier list <span>↗</span></Link></div>
+    <div className="header-actions">{isLoaded && (user ? <UserButton /> : <Link className="header-login" href="/login">Log in</Link>)}<Link className="button header-cta" href="/rank">Make a tier list <span>↗</span></Link></div>
   </header>;
 }
 

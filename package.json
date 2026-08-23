@@ -9,6 +9,8 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@clerk/nextjs": "^7.8.0",
+    "@clerk/ui": "^1.30.6",
     "next": "16.3.2",
     "react": "19.2.0",
     "react-dom": "19.2.0"
