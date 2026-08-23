@@ -3,11 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { categories, leaderboard, models, Tier, tierMeta } from "./data";
-import { ModelMark } from "./components";
-
-function scoreFor(modelId: string, category: string) {
-  return leaderboard(category).find((model) => model.id === modelId)!;
-}
+import { Footer, Header, ModelMark } from "./components";
 
 function TierCard({ model, rank }: { model: ReturnType<typeof leaderboard>[number]; rank: number }) {
   return <Link href={`/models/${model.id}`} className="tier-card"><span className="tier-rank">{String(rank).padStart(2, "0")}</span><ModelMark model={model} small /><strong>{model.name}</strong><span className="tier-grip">⠿</span></Link>;
@@ -26,14 +22,12 @@ function BenchmarkPanel({ item, activeModelIds, selected, onSelect }: { item: (t
 export default function Home() {
   const [category, setCategory] = useState("overall");
   const [activeModelIds, setActiveModelIds] = useState<string[]>(() => models.map((model) => model.id));
-  const [profileModelId, setProfileModelId] = useState("gpt-5-6-sol");
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [search, setSearch] = useState("");
   useEffect(() => { const saved = localStorage.getItem("tier-bench:active-models"); if (saved) setActiveModelIds(JSON.parse(saved)); }, []);
   const board = useMemo(() => leaderboard(category).filter((model) => activeModelIds.includes(model.id)), [category, activeModelIds]);
   const grouped = (Object.keys(tierMeta) as Tier[]).map((tier) => ({ tier, models: board.filter((model) => model.tier === tier) }));
   const active = categories.find((item) => item.slug === category)!;
-  const profileModel = models.find((model) => model.id === profileModelId) ?? models[0];
   const visibleModels = models.filter((model) => model.name.toLowerCase().includes(search.toLowerCase()));
 
   function reset() { setCategory("overall"); window.scrollTo({ top: 0, behavior: "smooth" }); }
@@ -52,12 +46,20 @@ export default function Home() {
   function saveModels() { localStorage.setItem("tier-bench:active-models", JSON.stringify(activeModelIds)); setSelectorOpen(false); }
   function loadModels() { const saved = localStorage.getItem("tier-bench:active-models"); if (saved) setActiveModelIds(JSON.parse(saved)); }
 
-  return <><main className="tier-app">
-    <section className="tier-toolbar"><div className="tier-title"><h1>AI model tier list</h1><span>{activeModelIds.length} models</span></div><div className="toolbar-actions"><button className="toolbar-button" onClick={reset}>Reset</button><button className="toolbar-button export" onClick={exportBoard}>Export PNG <span>↗</span></button></div></section>
-    <section className="tier-controls"><div><span>Benchmark focus</span><strong>{active.name}</strong><small>{active.prompt}</small></div><div className="tier-control-selects"><details className="model-manager" open={selectorOpen} onToggle={(event) => setSelectorOpen(event.currentTarget.open)}><summary className="model-manager-trigger">{activeModelIds.length} selected <b>⌄</b></summary><div className="model-popover"><input autoFocus={selectorOpen} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search models..." /><div className="model-popover-list">{visibleModels.map((model) => <label key={model.id}><input type="checkbox" checked={activeModelIds.includes(model.id)} onChange={() => toggleModel(model.id)} /><ModelMark model={model} small /><span>{model.name}</span><i>●</i></label>)}</div><div className="model-popover-actions"><button type="button" onClick={() => setActiveModelIds([])}>Clear</button><button type="button" onClick={() => setActiveModelIds(models.map((model) => model.id))}>Select all</button><button type="button" onClick={() => setActiveModelIds(models.map((model) => model.id))}>Reset to default</button><button type="button" onClick={saveModels}>Save</button><button type="button" onClick={loadModels}>Load</button></div></div></details></div></section>
+  return <><Header /><main className="tier-app">
+    <section className="landing-hero">
+      <div className="landing-hero-copy">
+        <span className="eyebrow"><span>COMMUNITY AI RANKINGS</span><i /> BUILT FOR PEOPLE WHO USE THE MODELS</span>
+        <h1>Find the models worth <em>keeping.</em></h1>
+        <p>tier/bench is a living, community-built guide to the AI models people actually use. Compare the main board, explore focused benchmarks, and make a ranking that reflects your own work.</p>
+        <div className="landing-actions"><Link className="button acid landing-primary" href="/rank">Make your own tier list <span>↗</span></Link><a className="text-link" href="#main-board">Explore the rankings ↓</a></div>
+      </div>
+    </section>
+    <section className="tier-toolbar" id="main-board"><div className="tier-title"><h1>AI model tier list</h1></div><div className="toolbar-actions"><button className="toolbar-button" onClick={reset}>Reset</button><button className="toolbar-button export" onClick={exportBoard}>Export PNG <span>↗</span></button></div></section>
+    <section className="tier-controls"><div className="tier-global-label">Global tier-list</div><div className="tier-control-selects"><details className="model-manager" open={selectorOpen} onToggle={(event) => setSelectorOpen(event.currentTarget.open)}><summary className="model-manager-trigger">{activeModelIds.length} selected <b>⌄</b></summary><div className="model-popover"><input autoFocus={selectorOpen} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search models..." /><div className="model-popover-list">{visibleModels.map((model) => <label key={model.id}><input type="checkbox" checked={activeModelIds.includes(model.id)} onChange={() => toggleModel(model.id)} /><ModelMark model={model} small /><span>{model.name}</span><i>●</i></label>)}</div><div className="model-popover-actions"><button type="button" onClick={() => setActiveModelIds([])}>Clear</button><button type="button" onClick={() => setActiveModelIds(models.map((model) => model.id))}>Select all</button><button type="button" onClick={() => setActiveModelIds(models.map((model) => model.id))}>Reset to default</button><button type="button" onClick={saveModels}>Save</button><button type="button" onClick={loadModels}>Load</button></div></div></details></div></section>
     <section className="tier-canvas">{grouped.map(({ tier, models: inTier }) => <div className="tier-row" key={tier}><div className="tier-label" style={{ background: tierMeta[tier].color }}><strong>{tier}</strong></div><div className="tier-models">{inTier.length ? inTier.map((model, index) => <TierCard key={model.id} model={model} rank={board.indexOf(model) + 1} />) : <span className="empty-tier">No models landed here</span>}</div><div className="tier-actions"><button type="button" aria-label={`Add model to ${tier}`}>＋</button><button type="button" aria-label={`Clear ${tier}`}>×</button></div></div>)}</section>
     <section className="tier-footnote"><span>Scores update by board</span><p>{active.prompt}</p><Link href="/methodology">How this is calculated ↗</Link></section>
     <section className="benchmark-section"><div className="benchmark-heading"><div><span className="section-index">02 / BENCHMARK TIER LISTS</span><h2>Compare every board</h2><p>The main tier list is above. Scroll down to compare the same models across each benchmark.</p></div><span className="benchmark-heading-note">{activeModelIds.length} models · {categories.length} boards</span></div><div className="benchmark-grid">{categories.map((item) => <BenchmarkPanel key={item.slug} item={item} activeModelIds={activeModelIds} selected={item.slug === category} onSelect={() => setCategory(item.slug)} />)}</div></section>
-    <section className="profile-section"><div className="profile-heading"><div><span className="section-index">01 / MODEL PROFILE</span><h2>{profileModel.name} across categories</h2><p>Scroll down from the tier board to see how this model reads across the community’s six questions.</p></div><div className="profile-actions"><select value={profileModelId} onChange={(event) => setProfileModelId(event.target.value)}>{models.filter((model) => activeModelIds.includes(model.id)).map((model) => <option value={model.id} key={model.id}>{model.name}</option>)}</select><Link href={`/models/${profileModel.id}`}>Open full profile ↗</Link></div></div><div className="profile-grid">{categories.map((item, index) => { const score = scoreFor(profileModel.id, item.slug); return <div className="profile-score" key={item.slug}><span>{String(index + 1).padStart(2, "0")}</span><strong>{item.name}</strong><div><i style={{ width: `${score.score / 6 * 100}%` }} /><b>{score.score.toFixed(2)}</b></div></div>; })}</div></section>
-  </main></>;
+    <section className="page-cta"><div><span>MAKE YOUR CALL</span><h2>Ready to rank the models you actually use?</h2><p>Build a personal tier list, save your point of view, and share it with the community.</p></div><Link className="button" href="/rank">Make your own tier list <span>↗</span></Link></section>
+  </main><Footer /></>;
 }

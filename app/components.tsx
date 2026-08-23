@@ -17,7 +17,7 @@ export function Header() {
       <Link className={path.startsWith("/proposals") ? "active" : ""} href="/proposals">Proposals</Link>
       <Link className={path.startsWith("/methodology") ? "active" : ""} href="/methodology">Method</Link>
     </nav>
-    <Link className="button header-cta" href="/rank">Rank models <span>↗</span></Link>
+    <div className="header-actions"><Link className="header-login" href="/login">Log in</Link><Link className="button header-cta" href="/rank">Make a tier list <span>↗</span></Link></div>
   </header>;
 }
 

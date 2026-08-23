@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { categories, Model, models, Tier, tierMeta } from "../data";
 import { Header, ModelMark } from "../components";
 
@@ -8,8 +9,8 @@ type Placements = Record<string, Tier | null>;
 const tiers = Object.keys(tierMeta) as Tier[];
 const storageKey = (category: string) => `tier-bench:ballot:${category}`;
 
-function RankCard({ model, onDragStart, onCycle }: { model: Model; onDragStart: () => void; onCycle: () => void }) {
-  return <button className="model-pill compact rank-card" draggable onDragStart={onDragStart} onClick={onCycle} title="Drag to a tier, or tap to move to the next tier">
+function RankCard({ model, onDragStart, onDragEnd, onCycle }: { model: Model; onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void; onDragEnd: () => void; onCycle: () => void }) {
+  return <button className="model-pill compact rank-card" draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onCycle} title="Drag to a tier, or tap to move to the next tier">
     <ModelMark model={model} small />
     <span className="model-copy"><strong>{model.name}</strong></span>
     <span className="drag-grip">⠿</span>
@@ -19,10 +20,10 @@ function RankCard({ model, onDragStart, onCycle }: { model: Model; onDragStart: 
 export default function RankPage() {
   const [category, setCategory] = useState("overall");
   const [placements, setPlacements] = useState<Placements>({});
-  const [dragged, setDragged] = useState<string | null>(null);
   const [over, setOver] = useState<Tier | "unranked" | null>(null);
   const [notice, setNotice] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
+  const draggedModel = useRef<string | null>(null);
   const rankedCount = Object.values(placements).filter(Boolean).length;
 
   useEffect(() => {
@@ -41,21 +42,29 @@ export default function RankPage() {
     setPlacements((current) => ({ ...current, [modelId]: tier }));
   }
 
-  function drop(tier: Tier | null) {
-    if (dragged) place(dragged, tier);
-    setDragged(null); setOver(null);
+  function startDrag(modelId: string, event: React.DragEvent<HTMLButtonElement>) {
+    draggedModel.current = modelId;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", modelId);
+  }
+
+  function finishDrag() {
+    draggedModel.current = null;
+    setOver(null);
+  }
+
+  function drop(tier: Tier | null, event: React.DragEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const modelId = event.dataTransfer.getData("text/plain") || draggedModel.current;
+    if (modelId && models.some((model) => model.id === modelId)) place(modelId, tier);
+    finishDrag();
   }
 
   function cycle(modelId: string) {
-    if (dragged) return;
     const current = placements[modelId];
     const next = current ? tiers[tiers.indexOf(current) + 1] ?? null : "S";
     place(modelId, next);
-  }
-
-  function save() {
-    localStorage.setItem(storageKey(category), JSON.stringify(placements));
-    setNotice(rankedCount >= 5 ? "Ballot saved locally. Your previous local ballot was replaced." : "Draft saved locally. Rank at least five models to publish or share it.");
   }
 
   function reset() {
@@ -96,19 +105,19 @@ export default function RankPage() {
     <aside className="rank-sidebar">
       <span className="section-index">Your ballot</span><h2>Rank what you know.</h2><p>Leave unfamiliar models on the bench. Tap a card to cycle tiers, or drag it exactly where it belongs.</p>
       <label htmlFor="category">Board</label><select id="category" value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}</select>
-      <div className="progress-track"><span style={{ width: `${Math.min(100, rankedCount / 5 * 100)}%` }} /></div><div className="progress-copy"><span>{rankedCount} ranked</span><span>{rankedCount >= 5 ? "ready" : `${5 - rankedCount} to publish`}</span></div>
-      <div className="rank-actions"><button className="button acid" onClick={save}>Save locally <span>↓</span></button><button className="button" disabled={rankedCount < 5} onClick={() => setShareOpen(true)}>Share <span>↗</span></button></div>
+      <div className="progress-track"><span style={{ width: `${Math.min(100, rankedCount / 5 * 100)}%` }} /></div><div className="progress-copy"><span>{rankedCount} ranked</span><span>{rankedCount > 0 ? "ready to submit" : "1 to submit"}</span></div>
+      <div className="rank-actions">{rankedCount > 0 && <Link className="button acid" href="/signup">Submit tier list <span>↗</span></Link>}<button className="button" disabled={rankedCount < 5} onClick={() => setShareOpen(true)}>Share <span>↗</span></button></div>
     </aside>
     <section className="rank-workspace">
       {notice && <div className="notice">{notice}</div>}
       <div className="rank-help"><span>Drag models between tiers. Within-tier order is kept for your personal view.</span><button onClick={reset}>Reset ballot</button></div>
-      <div className="editor-board">{tiers.map((tier) => <div className="editor-row" key={tier}>
+      <div className="editor-board">{tiers.map((tier) => <div className={`editor-row ${over === tier ? "drag-over" : ""}`} data-drop-tier={tier} key={tier} onDragEnter={(event) => { event.preventDefault(); setOver(tier); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setOver(tier); }} onDrop={(event) => drop(tier, event)}>
         <div className="editor-label" style={{ background: tierMeta[tier].color }}>{tier}</div>
-        <div className={`editor-dropzone ${over === tier ? "drag-over" : ""}`} onDragOver={(event) => { event.preventDefault(); setOver(tier); }} onDragLeave={() => setOver(null)} onDrop={() => drop(tier)}>
-          {byTier[tier].map((model) => <RankCard key={model.id} model={model} onDragStart={() => setDragged(model.id)} onCycle={() => cycle(model.id)} />)}
+        <div className="editor-dropzone">
+          {byTier[tier].map((model) => <RankCard key={model.id} model={model} onDragStart={(event) => startDrag(model.id, event)} onDragEnd={finishDrag} onCycle={() => cycle(model.id)} />)}
         </div>
       </div>)}</div>
-      <div className="unranked"><h3>On the bench · unranked</h3><div className={`unranked-list ${over === "unranked" ? "drag-over" : ""}`} onDragOver={(event) => { event.preventDefault(); setOver("unranked"); }} onDragLeave={() => setOver(null)} onDrop={() => drop(null)}>{byTier.unranked.map((model) => <RankCard key={model.id} model={model} onDragStart={() => setDragged(model.id)} onCycle={() => cycle(model.id)} />)}</div></div>
+      <div className={`unranked ${over === "unranked" ? "drag-over" : ""}`} data-drop-tier="unranked" onDragEnter={(event) => { event.preventDefault(); setOver("unranked"); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setOver("unranked"); }} onDrop={(event) => drop(null, event)}><h3>On the bench · unranked</h3><div className="unranked-list">{byTier.unranked.map((model) => <RankCard key={model.id} model={model} onDragStart={(event) => startDrag(model.id, event)} onDragEnd={finishDrag} onCycle={() => cycle(model.id)} />)}</div></div>
     </section>
   </main>
   {shareOpen && <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal"><button className="modal-close" onClick={() => setShareOpen(false)}>×</button><span className="section-index">Share this revision</span><h2>Make it permanent.</h2><p>Each share is an immutable local snapshot. Future ballot edits won’t change it.</p><div className="modal-options"><button onClick={createShare}><strong>Copy a link</strong><small>Create a local snapshot URL and copy it.</small></button><button onClick={savePicture}><strong>Save a picture</strong><small>Download a 1200 × 630 vector image.</small></button></div></div></div>}
