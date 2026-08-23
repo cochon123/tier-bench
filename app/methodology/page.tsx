@@ -1,0 +1,11 @@
+import { Footer, Header } from "../components";
+
+export default function MethodologyPage() {
+  return <><Header /><main className="page-shell"><header className="page-intro"><span className="kicker">Open methodology · v1</span><h1>Opinion, with the workings shown.</h1><p>This is not an objective benchmark. It is a legible summary of how the community feels about the models it has actually used.</p></header><article className="reading">
+    <section><span className="section-index">01 / BALLOTS</span><h2>Rank what you know</h2><p>Members place models from S through F and may leave unfamiliar ones unranked. At least five placements are required to publish. There is one current ballot per person and board; editing replaces the previous ballot’s influence while preserving revision history.</p></section>
+    <section><span className="section-index">02 / SCORE</span><h2>Abstention is not a zero</h2><p>S through F map to 6 through 1. For each model we first take the observed mean only from ballots that ranked it. Then we pull uncertain results toward the category baseline using ten equivalent ballots.</p><div className="formula">score = (votes × observed mean + 10 × board baseline) / (votes + 10)</div><p>This keeps a brand-new release with two enthusiastic voters from appearing more certain than a model judged by hundreds.</p></section>
+    <section><span className="section-index">03 / TIERS</span><h2>Stable bands, honest detail</h2><p>Fixed score bands determine the visible tier. Within each tier, models are ordered by score and then unique voter count. Every model page shows its voter count and complete S–F distribution, so disagreement stays visible.</p></section>
+    <section><span className="section-index">04 / FRESHNESS</span><h2>Current without the theatre</h2><p>Public results may be cached for up to five minutes. Production will publish precomputed snapshots rather than recalculating raw ballots on every visit. Algorithm changes get a new version and changelog.</p></section>
+    <section><span className="section-index">LOCAL DEMO</span><h2>Everything stays in this browser</h2><p>This implementation uses seeded model facts and browser storage for ballots, comments, proposals, votes, and shared snapshots. It makes no catalog, identity, database, email, or analytics requests.</p></section>
+  </article></main><Footer /></>;
+}
