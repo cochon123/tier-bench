@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { UserButton, useUser } from "@clerk/nextjs";
+import NumberFlow from "@number-flow/react";
 import { Model, Tier, tierMeta } from "./data";
 
 export function Logo() {
@@ -17,6 +19,7 @@ export function Header() {
     <nav aria-label="Main navigation">
       <Link className={path === "/" ? "active" : ""} href="/">Boards</Link>
       <Link className={path.startsWith("/proposals") ? "active" : ""} href="/proposals">Proposals</Link>
+      <Link className={path.startsWith("/rank") ? "active" : ""} href="/rank">My ranking</Link>
       <Link className={path.startsWith("/methodology") ? "active" : ""} href="/methodology">Method</Link>
     </nav>
     <div className="header-actions">{isLoaded && (user ? <UserButton /> : <Link className="header-login" href="/login">Log in</Link>)}<Link className="button header-cta" href="/rank">Make a tier list <span>↗</span></Link></div>
@@ -46,4 +49,18 @@ export function ModelPill({ model, score, rank, compact = false }: { model: Mode
 
 export function TierBadge({ tier }: { tier: Tier }) {
   return <span className="tier-badge" style={{ background: tierMeta[tier].color }}>{tier}</span>;
+}
+
+export function RollingNumber({ value, spinKey }: { value: number; spinKey: number }) {
+  const [animatedValue, setAnimatedValue] = useState(value);
+
+  useEffect(() => {
+    setAnimatedValue(value + 1);
+    const settle = window.setTimeout(() => setAnimatedValue(value), 900);
+    return () => window.clearTimeout(settle);
+  }, [spinKey, value]);
+
+  return <span className="rolling-number" aria-label={value.toLocaleString()}>
+    <NumberFlow value={animatedValue} locales="en-US" format={{ maximumFractionDigits: 0 }} trend={1} transformTiming={{ duration: 850, easing: "cubic-bezier(.2,.75,.25,1)" }} spinTiming={{ duration: 1100, easing: "cubic-bezier(.2,.75,.25,1)" }} opacityTiming={{ duration: 350, easing: "ease-out" }} />
+  </span>;
 }
