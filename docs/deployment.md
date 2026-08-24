@@ -20,9 +20,23 @@ public interface. A managed database URL works as well.
    `DATABASE_URL` in `.env.production`. The supplied local-VPS example uses
    `127.0.0.1`; do not change PostgreSQL to listen on a public interface.
    Migrations run from the release image before the application starts.
-5. Copy `deploy/nginx/tier-bench.conf` to the Nginx sites directory, replace
-   the hostname and certificate paths, run `nginx -t`, then obtain the TLS
-   certificate with Certbot and reload Nginx.
+5. Create Certbot's webroot with `sudo mkdir -p /var/www/certbot`. Copy
+   `deploy/nginx/tier-bench-http.conf` to the Nginx sites directory, replace
+   the hostname, enable that site, then run `sudo nginx -t && sudo systemctl
+   reload nginx`. This bootstrap configuration has no certificate references,
+   so Nginx can start before a certificate exists.
+6. Issue the initial certificate over HTTP, replacing the example hostname:
+
+   ```sh
+   sudo certbot certonly --webroot --webroot-path /var/www/certbot \
+     --domain rankings.example.com
+   ```
+
+7. Only after Certbot succeeds, replace the bootstrap site with
+   `deploy/nginx/tier-bench.conf`. Replace its hostname and certificate paths,
+   then run `sudo nginx -t && sudo systemctl reload nginx`. Finally, verify
+   renewal with `sudo certbot renew --dry-run`. The TLS configuration keeps the
+   HTTP challenge path reachable while redirecting every other HTTP request.
 
 ## Release
 

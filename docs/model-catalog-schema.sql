@@ -11,6 +11,7 @@ create table if not exists model_catalog (
   provider text not null,
   name text not null,
   description text,
+  released_at timestamptz,
   created_at timestamptz,
   context_length integer check (context_length is null or context_length > 0),
   modality text,
@@ -87,4 +88,3 @@ select
 from model_catalog c
 left join model_default_mappings m on m.canonical_slug = c.canonical_slug and m.active
 where c.status = 'active';
-

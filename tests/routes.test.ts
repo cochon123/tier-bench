@@ -3,6 +3,7 @@ import { after, test } from "node:test";
 import { GET as health } from "../app/api/health/route.ts";
 import { GET as communityBoard } from "../app/api/community-board/route.ts";
 import { GET as leaderboard } from "../app/api/v1/leaderboards/[slug]/route.ts";
+import { GET as modelCatalog } from "../app/api/v1/models/route.ts";
 import { sql } from "../app/api/_lib/db.ts";
 
 const db = sql;
@@ -20,6 +21,18 @@ test("health route is explicitly uncacheable", async () => {
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store, max-age=0");
   assert.equal((await response.json()).status, "ok");
+});
+
+databaseTest("model catalog API exposes explicit release dates", async () => {
+  const response = await modelCatalog(new Request("http://localhost/api/v1/models?q=Claude%20Fable%205"));
+  assert.equal(response.status, 200);
+  const body = await response.json() as { data: Array<{ id: string; releasedAt: string }> };
+  assert.equal(body.data.length, 1);
+  assert.equal(body.data[0].id, "claude-fable-5");
+  assert.equal(body.data[0].releasedAt, "2026-08-18");
+
+  const filtered = await modelCatalog(new Request("http://localhost/api/v1/models?q=Claude%20Fable%205&released_after=2026-08-19"));
+  assert.deepEqual((await filtered.json() as { data: unknown[] }).data, []);
 });
 
 databaseTest("community board and historical API return only persisted ballot aggregates", async () => {

@@ -68,6 +68,34 @@ test("all migrations apply and a second run is a no-op", async () => {
     `;
     assert.equal(seeded.count, 18, "all shipped default models should be seeded");
 
+    const releaseDates = await sql`
+      select m.default_model_id as id, c.released_at::date::text as released_at
+      from model_default_mappings m
+      join model_catalog c on c.canonical_slug = m.canonical_slug
+      where m.active
+      order by m.display_order
+    `;
+    assert.deepEqual(releaseDates.map(({ id, released_at }) => ({ id, released_at })), [
+      { id: "claude-fable-5", released_at: "2026-08-18" },
+      { id: "claude-mythos-5", released_at: "2026-08-14" },
+      { id: "claude-opus-5", released_at: "2026-08-11" },
+      { id: "claude-sonnet-5", released_at: "2026-08-08" },
+      { id: "gpt-5-6-terra", released_at: "2026-08-16" },
+      { id: "gpt-5-6-luna", released_at: "2026-08-16" },
+      { id: "gpt-5-6-sol", released_at: "2026-08-16" },
+      { id: "glm-5-3", released_at: "2026-08-12" },
+      { id: "deepseek-v4-pro", released_at: "2026-08-13" },
+      { id: "mimo-v2-5-pro", released_at: "2026-08-09" },
+      { id: "mistral-large", released_at: "2026-08-02" },
+      { id: "qwen-3-8-27b", released_at: "2026-08-15" },
+      { id: "qwen-3-8-max", released_at: "2026-08-15" },
+      { id: "muse-glimmer", released_at: "2026-08-06" },
+      { id: "gemini-3-1-pro", released_at: "2026-08-04" },
+      { id: "gemini-3-7-flash", released_at: "2026-08-17" },
+      { id: "kimi-k3", released_at: "2026-08-10" },
+      { id: "grok-4-6", released_at: "2026-08-07" },
+    ]);
+
     const firstAppliedAt = applied.map(({ version, applied_at }) => [version, applied_at]);
     await runMigrations();
     const afterSecondRun = await sql`
