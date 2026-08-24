@@ -68,7 +68,7 @@ export async function POST(request: Request) {
             id, canonical_slug, api_id, name, provider, context_window,
             context_length, pricing, pricing_json, description, modality,
             input_modalities, output_modalities, metadata, raw, source,
-            status, active, created_at, last_seen_at, updated_at
+            status, active, created_at, released_at, last_seen_at, updated_at
           ) values (
             ${model.canonicalSlug}, ${model.canonicalSlug}, ${model.apiId},
             ${model.name}, ${model.provider}, ${model.contextLength === null ? null : String(model.contextLength)},
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
             ${model.description}, ${model.modality}, ${tx.json(JSON.parse(JSON.stringify(model.inputModalities)))},
             ${tx.json(JSON.parse(JSON.stringify(model.outputModalities)))}, ${tx.json(JSON.parse(JSON.stringify({ topProvider: model.topProvider, perRequestLimits: model.perRequestLimits, supportedParameters: model.supportedParameters })))},
             ${tx.json(JSON.parse(JSON.stringify(model.raw)))}, 'openrouter', 'active',
-            true, coalesce(${model.createdAt}::timestamptz, now()), ${syncStartedAt}::timestamptz, now()
+            true, coalesce(${model.createdAt}::timestamptz, now()), ${model.createdAt}::timestamptz, ${syncStartedAt}::timestamptz, now()
           )
           on conflict (canonical_slug) do update set
             api_id = excluded.api_id,
@@ -97,6 +97,7 @@ export async function POST(request: Request) {
             is_default = false,
             active = true,
             created_at = coalesce(${model.createdAt}::timestamptz, model_catalog.created_at),
+            released_at = coalesce(${model.createdAt}::timestamptz, model_catalog.released_at),
             last_seen_at = ${syncStartedAt}::timestamptz,
             updated_at = now()
         `;
