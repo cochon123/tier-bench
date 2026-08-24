@@ -63,6 +63,8 @@ export async function POST(request: Request) {
     const result = await sql.begin(async (tx) => {
       let count = 0;
       for (const model of plan.models) {
+        const aliasOwner = await tx`select canonical_slug from model_catalog_aliases where api_id = ${model.apiId} and canonical_slug <> ${model.canonicalSlug} limit 1`;
+        if (aliasOwner.length) throw new Error(`OpenRouter alias collision: ${model.apiId} is already owned by ${aliasOwner[0].canonical_slug}`);
         await tx`
           insert into model_catalog (
             id, canonical_slug, api_id, name, provider, context_window,

@@ -1,4 +1,5 @@
-import { sql } from "./db";
+import { sql } from "./db.ts";
+import { createHash } from "node:crypto";
 
 /**
  * A fixed-window limiter stored in PostgreSQL. This is deliberately shared by
@@ -25,4 +26,10 @@ export function rateLimitResponse(retryAfter: number) {
     status: 429,
     headers: { "Content-Type": "application/json", "Retry-After": String(retryAfter) },
   });
+}
+
+export async function publicRateLimit(request: Request, scope: string, limit = 120, windowMs = 60_000) {
+  const address = request.headers.get("x-real-ip") ?? request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim() ?? "unknown";
+  const fingerprint = createHash("sha256").update(address).digest("hex").slice(0, 24);
+  return rateLimit(`public:${scope}:${fingerprint}`, limit, windowMs);
 }

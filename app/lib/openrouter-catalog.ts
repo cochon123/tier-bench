@@ -217,6 +217,14 @@ export function buildCatalogSyncPlan(models: OpenRouterModel[], minimumModels = 
   const normalized = models.filter((model) => isTextModel(model)).map(normalizeModel).filter((model): model is NormalizedCatalogModel => Boolean(model));
   const deduplicated = deduplicateCanonicalModels(normalized);
   if (!deduplicated.length) throw new Error("OpenRouter catalog contained no text-output models");
+  const identities = new Map<string, string>();
+  for (const model of deduplicated) {
+    for (const identity of [model.canonicalSlug, model.apiId]) {
+      const owner = identities.get(identity);
+      if (owner && owner !== model.canonicalSlug) throw new Error(`OpenRouter catalog identity collision for ${identity}`);
+      identities.set(identity, model.canonicalSlug);
+    }
+  }
   return {
     models: deduplicated,
     fetchedCount: models.length,

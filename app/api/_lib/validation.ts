@@ -26,6 +26,34 @@ export function validatePlacements(value: unknown): { ok: true; placements: Ball
   return { ok: true, placements, rankedCount };
 }
 
+export type CatalogIdentity = { id: string; canonical_slug: string; api_id: string; default_model_id: string | null };
+
+/** Resolve every accepted alias to one durable ballot ID and fail on ambiguity. */
+export function normalizeCatalogPlacements(placements: BallotPlacements, catalog: CatalogIdentity[]) {
+  const aliases = new Map<string, string>();
+  const ambiguous = new Set<string>();
+  for (const model of catalog) {
+    const stableId = model.default_model_id ?? model.canonical_slug;
+    for (const alias of [model.id, model.canonical_slug, model.api_id, model.default_model_id]) {
+      if (!alias) continue;
+      const existing = aliases.get(alias);
+      if (existing && existing !== stableId) ambiguous.add(alias);
+      else aliases.set(alias, stableId);
+    }
+  }
+  const normalized: BallotPlacements = {};
+  for (const [submittedId, tier] of Object.entries(placements)) {
+    const stableId = aliases.get(submittedId);
+    if (ambiguous.has(submittedId)) return { ok: false as const, error: `Ambiguous model alias: ${submittedId}` };
+    if (!stableId) return { ok: false as const, error: `Unknown or inactive model: ${submittedId}` };
+    if (stableId in normalized && normalized[stableId] !== tier) {
+      return { ok: false as const, error: `Conflicting placements were submitted for aliases of ${stableId}` };
+    }
+    normalized[stableId] = tier;
+  }
+  return { ok: true as const, placements: normalized, rankedCount: Object.values(normalized).filter(Boolean).length };
+}
+
 export function validateText(value: unknown, field: string, max: number) {
   if (typeof value !== "string") return { ok: false as const, error: `${field} must be text` };
   const normalized = value.trim();

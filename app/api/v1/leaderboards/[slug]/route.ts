@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server.js";
 import { apiMeta, boardAt, parseDay, today, validCategory } from "../../_lib/history.ts";
+import { publicRateLimit, rateLimitResponse } from "../../../_lib/rate-limit.ts";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
+  const limited = await publicRateLimit(request, "leaderboard-history");
+  if (!limited.allowed) return rateLimitResponse(limited.retryAfter);
   const { slug } = await params;
   if (!validCategory(slug)) return NextResponse.json({ error: { code: "category_not_found", message: `Unknown category: ${slug}` } }, { status: 404 });
   const query = new URL(request.url).searchParams;

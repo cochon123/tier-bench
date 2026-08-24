@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { databaseUnavailable, sql } from "../_lib/db";
 import { rateLimit, rateLimitResponse } from "../_lib/rate-limit";
 import { turnstileResponse, verifyTurnstile } from "../_lib/turnstile";
-import { validCategory, validatePlacements } from "../_lib/validation";
+import { normalizeCatalogPlacements, validCategory, validatePlacements } from "../_lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -48,15 +48,15 @@ export async function POST(request: Request) {
         from active_model_catalog
         where id = any(${ids}) or canonical_slug = any(${ids}) or api_id = any(${ids}) or default_model_id = any(${ids})
       ` : [];
-      const known = new Set(catalog.flatMap((row) => [row.id, row.canonical_slug, row.api_id, row.default_model_id].filter(Boolean).map(String)));
-      const unknown = ids.filter((id) => !known.has(id));
-      if (unknown.length) return { invalidModels: unknown };
+      const normalized = normalizeCatalogPlacements(result.placements, catalog as Array<{ id: string; canonical_slug: string; api_id: string; default_model_id: string | null }>);
+      if (!normalized.ok) return { validationError: normalized.error };
+      if (normalized.rankedCount < 5) return { validationError: "At least five distinct models must be ranked before saving a ballot" };
       await tx`select pg_advisory_xact_lock(hashtext(${`${userId}:${category}`}))`;
       const existing = await tx`select id, revision from ballots where user_id = ${userId} and category_slug = ${category} for update`;
       const revision = Number(existing[0]?.revision ?? 0) + 1;
       const rows = await tx`
         insert into ballots (user_id, category_slug, placements, ranked_count, revision)
-        values (${userId}, ${category}, ${tx.json(result.placements)}, ${result.rankedCount}, ${revision})
+        values (${userId}, ${category}, ${tx.json(normalized.placements)}, ${normalized.rankedCount}, ${revision})
         on conflict (user_id, category_slug) do update set
           placements = excluded.placements,
           ranked_count = excluded.ranked_count,
@@ -67,11 +67,11 @@ export async function POST(request: Request) {
       const ballot = rows[0];
       await tx`
         insert into ballot_revisions (ballot_id, user_id, category_slug, revision, placements, ranked_count)
-        values (${ballot.id}, ${userId}, ${category}, ${revision}, ${tx.json(result.placements)}, ${result.rankedCount})
+        values (${ballot.id}, ${userId}, ${category}, ${revision}, ${tx.json(normalized.placements)}, ${normalized.rankedCount})
       `;
       return ballot;
     });
-    if ("invalidModels" in saved) return NextResponse.json({ error: `Unknown or inactive model: ${saved.invalidModels[0]}` }, { status: 400 });
+    if ("validationError" in saved) return NextResponse.json({ error: saved.validationError }, { status: 400 });
     return NextResponse.json({ saved: true, revision: Number(saved.revision), updatedAt: saved.updated_at });
   } catch (error) {
     console.error("Unable to save ballot", error);
