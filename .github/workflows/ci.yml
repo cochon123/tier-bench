@@ -85,5 +85,9 @@ jobs:
             fi
             sleep 1
           done
-          test -n "$response"
+          if test -z "$response"; then
+            docker logs "$container_id"
+            curl --silent --show-error http://127.0.0.1:3000/api/health || true
+            exit 1
+          fi
           node -e 'const body = JSON.parse(process.argv[1]); if (body.status !== "ok") process.exit(1)' "$response"
