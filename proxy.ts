@@ -7,5 +7,7 @@ export default clerkMiddleware(async (auth, request) => {
 });
 
 export const config = {
-  matcher: ["/((?!_next|.*\\..*).*)"],
+  // Liveness must remain available even when Clerk configuration is broken;
+  // the orchestrator needs to distinguish auth configuration from process death.
+  matcher: ["/((?!_next|api/health|.*\\..*).*)"],
 };
