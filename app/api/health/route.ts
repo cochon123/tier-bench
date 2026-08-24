@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 
 // Keep this endpoint dependency-free so the reverse proxy and container
 // orchestrator can distinguish a running process from an application error.

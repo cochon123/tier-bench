@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { buildCatalogSyncPlan, fetchOpenRouterCatalog } from "../../../../lib/openrouter-catalog";
+import { assertSafeCatalogReconciliation, buildCatalogSyncPlan, fetchOpenRouterCatalog } from "../../../../lib/openrouter-catalog";
 import { databaseUnavailable, sql } from "../../../_lib/db";
 import { rateLimit, rateLimitResponse } from "../../../_lib/rate-limit";
 
@@ -33,19 +33,34 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "OpenRouter catalog sync is disabled" }, { status: 503 });
   }
 
-  const limited = rateLimit(`catalog-sync:${userId ?? "cron"}`, 2, 60_000);
+  const limited = await rateLimit(`catalog-sync:${userId ?? "cron"}`, 2, 60_000);
   if (!limited.allowed) return rateLimitResponse(limited.retryAfter);
 
   let runId: number | null = null;
   try {
-    const started = await sql`insert into model_catalog_sync_runs (status) values ('running') returning id`;
+    const started = await sql`insert into model_catalog_sync_runs (status) values ('running') returning id, started_at`;
     runId = Number(started[0]?.id);
+    const syncStartedAt = new Date(started[0]?.started_at as string | Date).toISOString();
+    const configuredMinimum = Number(process.env.OPENROUTER_MIN_CATALOG_MODELS ?? 10);
+    const minimumModels = Number.isInteger(configuredMinimum) && configuredMinimum > 0 ? configuredMinimum : 10;
     const upstream = await fetchOpenRouterCatalog({
-      minimumModels: Math.max(1, Number(process.env.OPENROUTER_MIN_CATALOG_MODELS ?? 10)),
+      minimumModels,
     });
-    const plan = buildCatalogSyncPlan(upstream, Math.max(1, Number(process.env.OPENROUTER_MIN_CATALOG_MODELS ?? 10)));
+    const plan = buildCatalogSyncPlan(upstream, minimumModels);
+    const baselineRows = await sql`
+      select
+        (select count(*)::integer from model_catalog where source = 'openrouter' and active) as active_openrouter_count,
+        coalesce((select fetched_count from model_catalog_sync_runs where status = 'succeeded' order by completed_at desc limit 1), 0)::integer as previous_fetched_count,
+        coalesce((select text_model_count from model_catalog_sync_runs where status = 'succeeded' order by completed_at desc limit 1), 0)::integer as previous_text_model_count
+    `;
+    const baseline = baselineRows[0] as { active_openrouter_count: number; previous_fetched_count: number; previous_text_model_count: number };
+    assertSafeCatalogReconciliation(plan, {
+      activeOpenRouterCount: Number(baseline.active_openrouter_count),
+      previousFetchedCount: Number(baseline.previous_fetched_count),
+      previousTextModelCount: Number(baseline.previous_text_model_count),
+    });
 
-    const imported = await sql.begin(async (tx) => {
+    const result = await sql.begin(async (tx) => {
       let count = 0;
       for (const model of plan.models) {
         await tx`
@@ -53,7 +68,7 @@ export async function POST(request: Request) {
             id, canonical_slug, api_id, name, provider, context_window,
             context_length, pricing, pricing_json, description, modality,
             input_modalities, output_modalities, metadata, raw, source,
-            status, active, last_seen_at, updated_at
+            status, active, created_at, last_seen_at, updated_at
           ) values (
             ${model.canonicalSlug}, ${model.canonicalSlug}, ${model.apiId},
             ${model.name}, ${model.provider}, ${model.contextLength === null ? null : String(model.contextLength)},
@@ -61,7 +76,7 @@ export async function POST(request: Request) {
             ${model.description}, ${model.modality}, ${tx.json(JSON.parse(JSON.stringify(model.inputModalities)))},
             ${tx.json(JSON.parse(JSON.stringify(model.outputModalities)))}, ${tx.json(JSON.parse(JSON.stringify({ topProvider: model.topProvider, perRequestLimits: model.perRequestLimits, supportedParameters: model.supportedParameters })))},
             ${tx.json(JSON.parse(JSON.stringify(model.raw)))}, 'openrouter', 'active',
-            true, now(), now()
+            true, coalesce(${model.createdAt}::timestamptz, now()), ${syncStartedAt}::timestamptz, now()
           )
           on conflict (canonical_slug) do update set
             api_id = excluded.api_id,
@@ -80,7 +95,9 @@ export async function POST(request: Request) {
             source = 'openrouter',
             status = case when model_catalog.status = 'hidden' then 'hidden' else 'active' end,
             is_default = false,
-            last_seen_at = now(),
+            active = true,
+            created_at = coalesce(${model.createdAt}::timestamptz, model_catalog.created_at),
+            last_seen_at = ${syncStartedAt}::timestamptz,
             updated_at = now()
         `;
         await tx`
@@ -90,16 +107,26 @@ export async function POST(request: Request) {
         `;
         count += 1;
       }
-      return count;
+      const reconciled = await tx`
+        update model_catalog
+        set active = false,
+            status = case when status = 'hidden' then 'hidden' else 'deprecated' end,
+            updated_at = now()
+        where source = 'openrouter'
+          and active
+          and last_seen_at < ${syncStartedAt}::timestamptz
+        returning canonical_slug
+      `;
+      return { imported: count, reconciled: reconciled.length };
     });
 
     await sql`
       update model_catalog_sync_runs
       set completed_at = now(), status = 'succeeded', fetched_count = ${plan.fetchedCount},
-          text_model_count = ${plan.textModelCount}, imported_count = ${imported}, error = null
+          text_model_count = ${plan.textModelCount}, imported_count = ${result.imported}, error = null
       where id = ${runId}
     `;
-    return NextResponse.json({ ok: true, runId, fetched: plan.fetchedCount, textModels: plan.textModelCount, imported });
+    return NextResponse.json({ ok: true, runId, fetched: plan.fetchedCount, textModels: plan.textModelCount, imported: result.imported, reconciled: result.reconciled });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Catalog sync failed";
     console.error("OpenRouter catalog sync failed", error);

@@ -56,6 +56,12 @@ export type CatalogSyncPlan = {
   skippedNonTextCount: number;
 };
 
+export type CatalogCompletenessBaseline = {
+  activeOpenRouterCount: number;
+  previousFetchedCount: number;
+  previousTextModelCount: number;
+};
+
 const DEFAULT_MIN_CATALOG_SIZE = 10;
 
 /**
@@ -157,8 +163,37 @@ export function assertCompleteCatalog(models: unknown, minimum = DEFAULT_MIN_CAT
   if (!Array.isArray(models) || models.length < minimum) {
     throw new Error(`OpenRouter catalog appears incomplete (received ${Array.isArray(models) ? models.length : 0}, expected at least ${minimum})`);
   }
-  if (models.some((model) => !model || typeof model !== "object" || typeof (model as OpenRouterModel).id !== "string")) {
+  if (models.some((model) => !model || typeof model !== "object" || typeof (model as OpenRouterModel).id !== "string" || !(model as OpenRouterModel).id.trim())) {
     throw new Error("OpenRouter catalog contains an invalid model record");
+  }
+}
+
+/**
+ * An upstream model disappearing is meaningful only when the response is
+ * plausibly complete. Compare it with both the current database and the last
+ * successful fetch so a truncated-but-valid JSON response cannot retire most
+ * of the catalog. Large legitimate removals require an operator to investigate
+ * and establish a new baseline instead of being applied silently.
+ */
+export function assertSafeCatalogReconciliation(
+  plan: CatalogSyncPlan,
+  baseline: CatalogCompletenessBaseline,
+  maximumDropFraction = 0.2,
+): void {
+  if (!Number.isFinite(maximumDropFraction) || maximumDropFraction < 0 || maximumDropFraction >= 1) {
+    throw new Error("Catalog reconciliation drop fraction must be between 0 and 1");
+  }
+  const retainedFraction = 1 - maximumDropFraction;
+  const expectedFetched = Math.max(0, baseline.previousFetchedCount);
+  const expectedText = Math.max(0, baseline.previousTextModelCount, baseline.activeOpenRouterCount);
+  const minimumFetched = Math.ceil(expectedFetched * retainedFraction);
+  const minimumText = Math.ceil(expectedText * retainedFraction);
+
+  if (expectedFetched > 0 && plan.fetchedCount < minimumFetched) {
+    throw new Error(`OpenRouter catalog reconciliation refused: fetched count dropped from ${expectedFetched} to ${plan.fetchedCount}`);
+  }
+  if (expectedText > 0 && plan.textModelCount < minimumText) {
+    throw new Error(`OpenRouter catalog reconciliation refused: text model count dropped from ${expectedText} to ${plan.textModelCount}`);
   }
 }
 

@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "tsc --noEmit",
-    "db:migrate": "node db/migrate.mjs"
+    "db:migrate": "node db/migrate.mjs",
+    "test:integration": "node --experimental-strip-types --test tests/*.test.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.8.0",

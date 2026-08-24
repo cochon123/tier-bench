@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { models } from "../../../data";
 import { sql } from "../../_lib/db";
-import { apiMeta, modelReleaseDay } from "../_lib/history";
+import { apiMeta } from "../_lib/history";
 
 export async function GET(request: Request) {
   const query = new URL(request.url).searchParams;
   const provider = query.get("provider")?.toLowerCase();
   const releasedAfter = query.get("released_after");
   const search = query.get("q")?.toLowerCase();
-  const fallback = models.map((model) => ({ id: model.id, name: model.name, provider: model.maker, releasedAt: modelReleaseDay(model.id), contextWindow: model.context, pricing: model.price, description: model.description, status: "active", isDefault: true, links: { history: `/api/v1/models/${model.id}/history` } }));
+  const fallback = models.map((model) => ({ id: model.id, name: model.name, provider: model.maker, releasedAt: new Date(model.release).toISOString().slice(0, 10), contextWindow: model.context, pricing: model.price, description: model.description, status: "active", isDefault: true, links: { history: `/api/v1/models/${model.id}/history` } }));
   let catalog = fallback;
   if (sql) {
     try {

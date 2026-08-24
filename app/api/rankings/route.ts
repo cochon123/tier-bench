@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { databaseUnavailable, sql } from "../_lib/db";
 import { rateLimit, rateLimitResponse } from "../_lib/rate-limit";
+import { turnstileResponse, verifyTurnstile } from "../_lib/turnstile";
 import { validCategory, validatePlacements } from "../_lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -26,12 +27,13 @@ export async function POST(request: Request) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!sql) return databaseUnavailable();
-  const limited = rateLimit(`ballot:${userId}`, 30, 60_000);
+  const limited = await rateLimit(`ballot:${userId}`, 30, 60_000);
   if (!limited.allowed) return rateLimitResponse(limited.retryAfter);
   let body: unknown;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
   if (!body || typeof body !== "object") return NextResponse.json({ error: "Request body must be an object" }, { status: 400 });
-  const input = body as { category?: unknown; placements?: unknown };
+  const input = body as { category?: unknown; placements?: unknown; turnstileToken?: unknown };
+  if (!await verifyTurnstile(request, input.turnstileToken)) return turnstileResponse();
   if (!validCategory(input.category)) return NextResponse.json({ error: "Unknown category" }, { status: 400 });
   const category = input.category as string;
   const result = validatePlacements(input.placements);
@@ -40,6 +42,15 @@ export async function POST(request: Request) {
 
   try {
     const saved = await sql.begin(async (tx) => {
+      const ids = Object.keys(result.placements);
+      const catalog = ids.length ? await tx`
+        select id, canonical_slug, api_id, default_model_id
+        from active_model_catalog
+        where id = any(${ids}) or canonical_slug = any(${ids}) or api_id = any(${ids}) or default_model_id = any(${ids})
+      ` : [];
+      const known = new Set(catalog.flatMap((row) => [row.id, row.canonical_slug, row.api_id, row.default_model_id].filter(Boolean).map(String)));
+      const unknown = ids.filter((id) => !known.has(id));
+      if (unknown.length) return { invalidModels: unknown };
       await tx`select pg_advisory_xact_lock(hashtext(${`${userId}:${category}`}))`;
       const existing = await tx`select id, revision from ballots where user_id = ${userId} and category_slug = ${category} for update`;
       const revision = Number(existing[0]?.revision ?? 0) + 1;
@@ -60,6 +71,7 @@ export async function POST(request: Request) {
       `;
       return ballot;
     });
+    if ("invalidModels" in saved) return NextResponse.json({ error: `Unknown or inactive model: ${saved.invalidModels[0]}` }, { status: 400 });
     return NextResponse.json({ saved: true, revision: Number(saved.revision), updatedAt: saved.updated_at });
   } catch (error) {
     console.error("Unable to save ballot", error);

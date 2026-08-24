@@ -28,7 +28,7 @@ export async function POST(request: Request) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!sql) return databaseUnavailable();
-  const limited = rateLimit(`proposal-create:${userId}`, 5, 3_600_000);
+  const limited = await rateLimit(`proposal-create:${userId}`, 5, 3_600_000);
   if (!limited.allowed) return rateLimitResponse(limited.retryAfter);
   let body: unknown;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }

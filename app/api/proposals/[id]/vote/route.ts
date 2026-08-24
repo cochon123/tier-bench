@@ -11,7 +11,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   if (!sql) return databaseUnavailable();
   const { id } = await params;
   if (!/^\d+$/.test(id)) return NextResponse.json({ error: "Invalid proposal id" }, { status: 400 });
-  const limited = rateLimit(`proposal-vote:${userId}`, 60, 60_000);
+  const limited = await rateLimit(`proposal-vote:${userId}`, 60, 60_000);
   if (!limited.allowed) return rateLimitResponse(limited.retryAfter);
   try {
     const result = await sql.begin(async (tx) => {

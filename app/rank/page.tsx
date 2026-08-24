@@ -4,12 +4,43 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { categories, Model, models, Tier, tierMeta } from "../data";
 import { Header, ModelMark } from "../components";
+import { Turnstile, turnstileEnabled } from "../turnstile";
 
 type Placements = Record<string, Tier | null>;
+type CatalogApiModel = {
+  id: string;
+  name: string;
+  provider: string;
+  releasedAt: string;
+  contextWindow: string;
+  pricing: string;
+  description: string;
+  status: string;
+  isDefault: boolean;
+};
 const tiers = Object.keys(tierMeta) as Tier[];
 const storageKey = (category: string) => `tier-bench:ballot:${category}`;
 const newestModel = [...models].sort((a, b) => new Date(b.release).getTime() - new Date(a.release).getTime())[0];
-const defaultModelIds = models.filter((model) => model.price !== "Limited access").map((model) => model.id);
+const defaultModelIds = models.map((model) => model.id);
+const defaultModelIdSet = new Set(defaultModelIds);
+
+function catalogModel(model: CatalogApiModel): Model {
+  const provider = model.provider || "Unknown";
+  const mark = provider.split(/[\s._-]+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "AI";
+  let hash = 0;
+  for (const character of provider) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  return {
+    id: model.id,
+    name: model.name,
+    maker: provider,
+    mark,
+    color: `hsl(${hash % 360} 45% 42%)`,
+    release: model.releasedAt || "Release date unavailable",
+    context: model.contextWindow || "",
+    price: model.pricing || "",
+    description: model.description || "OpenRouter model",
+  };
+}
 
 function RankCard({ model, onDragStart, onDragEnd, onCycle }: { model: Model; onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void; onDragEnd: () => void; onCycle: () => void }) {
   return <button className="tier-card rank-card" draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onCycle} title="Drag to a tier, or tap to move to the next tier">
@@ -31,6 +62,10 @@ export default function RankPage() {
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelSearch, setModelSearch] = useState("");
   const [pendingModelIds, setPendingModelIds] = useState<string[]>([]);
+  const [availableModels, setAvailableModels] = useState<Model[]>(models);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileGeneration, setTurnstileGeneration] = useState(0);
   const draggedModel = useRef<string | null>(null);
   const freshCategory = useRef<string | null>(null);
   const rankedCount = Object.values(placements).filter(Boolean).length;
@@ -51,6 +86,24 @@ export default function RankPage() {
 
   useEffect(() => {
     const controller = new AbortController();
+    fetch("/api/v1/models", { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const body = await response.json() as { data?: CatalogApiModel[] };
+        if (!Array.isArray(body.data)) return;
+        const merged = new Map(models.map((model) => [model.id, model]));
+        body.data
+          .filter((model) => model && model.status === "active" && typeof model.id === "string" && typeof model.name === "string")
+          .forEach((model) => { if (!defaultModelIdSet.has(model.id)) merged.set(model.id, catalogModel(model)); });
+        setAvailableModels([...merged.values()]);
+      })
+      .catch(() => {})
+      .finally(() => { if (!controller.signal.aborted) setCatalogLoading(false); });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
     if (freshCategory.current === category) {
       freshCategory.current = null;
       localStorage.removeItem(storageKey(category));
@@ -62,13 +115,19 @@ export default function RankPage() {
     }
     setBoardLoading(true);
     const local = localStorage.getItem(storageKey(category));
-    setPlacements(local ? JSON.parse(local) : {});
+    let localDraft: Placements = {};
+    try { localDraft = local ? JSON.parse(local) as Placements : {}; } catch { localStorage.removeItem(storageKey(category)); }
+    const hasLocalDraft = Object.keys(localDraft).length > 0;
+    setPlacements(localDraft);
     setSubmitted(false);
     setNotice("");
     fetch(`/api/rankings?category=${encodeURIComponent(category)}`, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) return;
         const data = await response.json() as { placements: Placements | null };
+        // A browser draft may predate sign-in. Never replace the work the user
+        // can currently see with an older server revision behind their back.
+        if (hasLocalDraft) return;
         const saved = data.placements ?? {};
         setPlacements(saved);
         setSubmitted(data.placements !== null);
@@ -81,11 +140,12 @@ export default function RankPage() {
 
   const byTier = useMemo(() => {
     const result: Record<Tier | "unranked", Model[]> = { S: [], A: [], B: [], C: [], D: [], F: [], unranked: [] };
-    models.filter((model) => defaultModelIds.includes(model.id) || model.id in placements).forEach((model) => result[placements[model.id] ?? "unranked"].push(model));
+    availableModels.filter((model) => defaultModelIdSet.has(model.id) || model.id in placements).forEach((model) => result[placements[model.id] ?? "unranked"].push(model));
     return result;
-  }, [placements]);
+  }, [availableModels, placements]);
 
   function place(modelId: string, tier: Tier | null) {
+    setSubmitted(false);
     setPlacements((current) => {
       const next = { ...current, [modelId]: tier };
       localStorage.setItem(storageKey(category), JSON.stringify(next));
@@ -100,9 +160,11 @@ export default function RankPage() {
   }
 
   async function submitRanking() {
-    const response = await fetch("/api/rankings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category, placements }) });
+    const response = await fetch("/api/rankings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category, placements, turnstileToken }) });
     if (response.ok) { setSubmitted(true); localStorage.setItem(storageKey(category), JSON.stringify(placements)); setNotice("Saved. Your ballot now contributes to this category’s global score."); }
     else setNotice("We could not save your tier list. Please try again.");
+    setTurnstileToken(null);
+    setTurnstileGeneration((current) => current + 1);
   }
 
   function startDrag(modelId: string, event: React.DragEvent<HTMLButtonElement>) {
@@ -120,7 +182,7 @@ export default function RankPage() {
     event.preventDefault();
     event.stopPropagation();
     const modelId = event.dataTransfer.getData("text/plain") || draggedModel.current;
-    if (modelId && models.some((model) => model.id === modelId)) place(modelId, tier);
+    if (modelId && availableModels.some((model) => model.id === modelId)) place(modelId, tier);
     finishDrag();
   }
 
@@ -132,6 +194,7 @@ export default function RankPage() {
 
   function reset() {
     setPlacements({});
+    setSubmitted(false);
     localStorage.removeItem(storageKey(category));
     setNotice("This local ballot has been reset.");
   }
@@ -154,8 +217,10 @@ export default function RankPage() {
   }
 
   async function createShare() {
-    const response = await fetch("/api/shares", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category, placements }) });
-    if (!response.ok) { setNotice(response.status === 401 ? "Log in to create a share link." : "We could not create a share link."); return; }
+    const response = await fetch("/api/shares", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category, turnstileToken }) });
+    setTurnstileToken(null);
+    setTurnstileGeneration((current) => current + 1);
+    if (!response.ok) { setNotice(response.status === 401 ? "Log in to create a share link." : response.status === 409 ? "Save this draft before sharing it." : "We could not create a share link."); return; }
     const data = await response.json(); const url = `${location.origin}/share/${data.snapshot.id}`;
     navigator.clipboard?.writeText(url); setNotice(`Snapshot link copied: ${url}`); setShareOpen(false);
   }
@@ -183,8 +248,9 @@ export default function RankPage() {
       <span className="section-index">Your ballot</span><h2>Rank what you know.</h2><p>Leave unfamiliar models on the bench. Tap a card to cycle tiers, or drag it exactly where it belongs.</p>
       {!placements[newestModel.id] && <div className="new-model-prompt"><span className="section-index">New on the board</span><strong>{newestModel.name}</strong><small>{newestModel.release} · {newestModel.description}</small><button className="button acid" onClick={rankNewest}>Propose a rank <span>↗</span></button></div>}
       <label htmlFor="category">Board</label><select id="category" value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}</select>
-      <div className="progress-track"><span style={{ width: `${Math.min(100, rankedCount / 5 * 100)}%` }} /></div><div className="progress-copy"><span>{rankedCount} ranked</span><span>{rankedCount > 0 ? "ready to submit" : "1 to submit"}</span></div>
-      <div className="rank-actions">{rankedCount > 0 && <button className="button acid" disabled={boardLoading} onClick={submitRanking}>{submitted ? "Update saved list" : "Save tier list"} <span>↗</span></button>}<button className="button" disabled={!mounted || boardLoading || rankedCount < 5} onClick={() => setShareOpen(true)}>Share <span>↗</span></button></div>
+      <div className="progress-track"><span style={{ width: `${Math.min(100, rankedCount / 5 * 100)}%` }} /></div><div className="progress-copy"><span>{rankedCount} ranked</span><span>{rankedCount >= 5 ? "ready to submit" : `${5 - rankedCount} to submit`}</span></div>
+      <Turnstile key={turnstileGeneration} onToken={setTurnstileToken} />
+      <div className="rank-actions">{rankedCount > 0 && <button className="button acid" disabled={boardLoading || rankedCount < 5 || (turnstileEnabled && !turnstileToken)} onClick={submitRanking}>{submitted ? "Update saved list" : "Save tier list"} <span>↗</span></button>}<button className="button" title={!submitted ? "Save this draft before sharing" : undefined} disabled={!mounted || boardLoading || rankedCount < 5 || !submitted || (turnstileEnabled && !turnstileToken)} onClick={() => setShareOpen(true)}>{submitted ? "Share" : "Save before sharing"} <span>↗</span></button></div>
     </aside>
     <section className="rank-workspace" id="personal-editor">
       {boardLoading && <div className="notice">Loading your saved {categories.find((item) => item.slug === category)?.name} board…</div>}
@@ -201,6 +267,6 @@ export default function RankPage() {
     </section>
   </main>
   {shareOpen && <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal"><button className="modal-close" onClick={() => setShareOpen(false)}>×</button><span className="section-index">Share this revision</span><h2>Make it permanent.</h2><p>Each share is an immutable database snapshot. Future ballot edits won’t change it.</p><div className="modal-options"><button onClick={createShare}><strong>Copy a link</strong><small>Create a durable snapshot URL and copy it.</small></button><button onClick={savePicture}><strong>Save a picture</strong><small>Download a 1200 × 630 vector image.</small></button></div></div></div>}
-  {modelPickerOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="add-model-title"><div className="modal model-picker"><button className="modal-close" onClick={() => setModelPickerOpen(false)}>×</button><span className="section-index">Add models</span><h2 id="add-model-title">Choose what belongs on the bench.</h2><input autoFocus value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="Search models…" aria-label="Search models" /><div className="model-picker-list">{models.filter((model) => !(defaultModelIds.includes(model.id) || model.id in placements) && model.name.toLowerCase().includes(modelSearch.toLowerCase())).map((model) => <label key={model.id}><input type="checkbox" checked={pendingModelIds.includes(model.id)} onChange={() => setPendingModelIds((current) => current.includes(model.id) ? current.filter((id) => id !== model.id) : [...current, model.id])} /><ModelMark model={model} small /><span>{model.name}</span></label>)}{models.every((model) => defaultModelIds.includes(model.id) || model.id in placements) && <p>Every available model is already on this board.</p>}</div><button className="button acid" disabled={pendingModelIds.length === 0} onClick={addSelectedModels}>Done <span>↗</span></button></div></div>}
+  {modelPickerOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="add-model-title"><div className="modal model-picker"><button className="modal-close" onClick={() => setModelPickerOpen(false)}>×</button><span className="section-index">Add models</span><h2 id="add-model-title">Choose what belongs on the bench.</h2><input autoFocus value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="Search models…" aria-label="Search models" /><div className="model-picker-list">{availableModels.filter((model) => !(defaultModelIdSet.has(model.id) || model.id in placements) && `${model.name} ${model.maker} ${model.id}`.toLowerCase().includes(modelSearch.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name)).map((model) => <label key={model.id}><input type="checkbox" checked={pendingModelIds.includes(model.id)} onChange={() => setPendingModelIds((current) => current.includes(model.id) ? current.filter((id) => id !== model.id) : [...current, model.id])} /><ModelMark model={model} small /><span>{model.name}</span></label>)}{catalogLoading && <p>Loading the OpenRouter catalog…</p>}{!catalogLoading && availableModels.every((model) => defaultModelIdSet.has(model.id) || model.id in placements) && <p>Every available model is already on this board.</p>}</div><button className="button acid" disabled={pendingModelIds.length === 0} onClick={addSelectedModels}>Done <span>↗</span></button></div></div>}
   </>;
 }

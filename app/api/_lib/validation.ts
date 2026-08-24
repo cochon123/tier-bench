@@ -1,5 +1,6 @@
-import { categories, models, Tier, tierMeta } from "../../data";
-import type { BallotPlacements } from "./db";
+import { categories, models, tierMeta } from "../../data.ts";
+import type { Tier } from "../../data.ts";
+import type { BallotPlacements } from "./db.ts";
 
 export const tiers = Object.keys(tierMeta) as Tier[];
 
