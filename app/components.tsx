@@ -19,10 +19,11 @@ export function Header() {
     <nav aria-label="Main navigation">
       <Link className={path === "/" ? "active" : ""} href="/">Boards</Link>
       <Link className={path.startsWith("/proposals") ? "active" : ""} href="/proposals">Proposals</Link>
-      <Link className={path.startsWith("/rank") ? "active" : ""} href="/rank">My ranking</Link>
+      <Link className={path.startsWith("/api") ? "active" : ""} href="/api">API</Link>
+      {user && <Link className={path.startsWith("/rank") ? "active" : ""} href="/rank">My ranking</Link>}
       <Link className={path.startsWith("/methodology") ? "active" : ""} href="/methodology">Method</Link>
     </nav>
-    <div className="header-actions">{isLoaded && (user ? <UserButton /> : <Link className="header-login" href="/login">Log in</Link>)}<Link className="button header-cta" href="/rank">Make a tier list <span>↗</span></Link></div>
+    <div className="header-actions">{isLoaded && (user ? <UserButton /> : <Link className="header-login" href="/login">Log in</Link>)}</div>
   </header>;
 }
 

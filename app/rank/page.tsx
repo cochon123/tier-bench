@@ -9,12 +9,12 @@ type Placements = Record<string, Tier | null>;
 const tiers = Object.keys(tierMeta) as Tier[];
 const storageKey = (category: string) => `tier-bench:ballot:${category}`;
 const newestModel = [...models].sort((a, b) => new Date(b.release).getTime() - new Date(a.release).getTime())[0];
+const defaultModelIds = models.filter((model) => model.price !== "Limited access").map((model) => model.id);
 
 function RankCard({ model, onDragStart, onDragEnd, onCycle }: { model: Model; onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void; onDragEnd: () => void; onCycle: () => void }) {
-  return <button className="model-pill compact rank-card" draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onCycle} title="Drag to a tier, or tap to move to the next tier">
+  return <button className="tier-card rank-card" draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onCycle} title="Drag to a tier, or tap to move to the next tier">
     <ModelMark model={model} small />
     <span className="model-copy"><strong>{model.name}</strong></span>
-    <span className="drag-grip">⠿</span>
   </button>;
 }
 
@@ -25,27 +25,63 @@ export default function RankPage() {
   const [notice, setNotice] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [categorySearch, setCategorySearch] = useState("");
+  const [mounted, setMounted] = useState(false);
+  const [boardLoading, setBoardLoading] = useState(true);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [modelSearch, setModelSearch] = useState("");
+  const [pendingModelIds, setPendingModelIds] = useState<string[]>([]);
   const draggedModel = useRef<string | null>(null);
+  const freshCategory = useRef<string | null>(null);
   const rankedCount = Object.values(placements).filter(Boolean).length;
 
   useEffect(() => {
-    const requestedCategory = new URLSearchParams(window.location.search).get("category");
+    setMounted(true);
+    const params = new URLSearchParams(window.location.search);
+    const requestedCategory = params.get("category");
+    const targetCategory = requestedCategory && categories.some((item) => item.slug === requestedCategory) ? requestedCategory : "overall";
     if (requestedCategory && categories.some((item) => item.slug === requestedCategory)) setCategory(requestedCategory);
-    const saved = localStorage.getItem(storageKey(category));
-    setPlacements(saved ? JSON.parse(saved) : {});
-    fetch(`/api/rankings?category=${category}`).then((response) => response.ok ? response.json() : null).then((data) => {
-      if (data?.placements) {
-        setPlacements(data.placements);
-        localStorage.setItem(storageKey(category), JSON.stringify(data.placements));
-        setSubmitted(true);
-      } else setSubmitted(false);
-    }).catch(() => setSubmitted(false));
+    if (params.get("fresh") === "1") {
+      freshCategory.current = targetCategory;
+      localStorage.removeItem(storageKey(targetCategory));
+      setPlacements({});
+      setSubmitted(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (freshCategory.current === category) {
+      freshCategory.current = null;
+      localStorage.removeItem(storageKey(category));
+      setPlacements({});
+      setSubmitted(false);
+      setNotice("");
+      setBoardLoading(false);
+      return () => controller.abort();
+    }
+    setBoardLoading(true);
+    const local = localStorage.getItem(storageKey(category));
+    setPlacements(local ? JSON.parse(local) : {});
+    setSubmitted(false);
     setNotice("");
+    fetch(`/api/rankings?category=${encodeURIComponent(category)}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const data = await response.json() as { placements: Placements | null };
+        const saved = data.placements ?? {};
+        setPlacements(saved);
+        setSubmitted(data.placements !== null);
+        localStorage.setItem(storageKey(category), JSON.stringify(saved));
+      })
+      .catch(() => {})
+      .finally(() => { if (!controller.signal.aborted) setBoardLoading(false); });
+    return () => controller.abort();
   }, [category]);
 
   const byTier = useMemo(() => {
     const result: Record<Tier | "unranked", Model[]> = { S: [], A: [], B: [], C: [], D: [], F: [], unranked: [] };
-    models.forEach((model) => result[placements[model.id] ?? "unranked"].push(model));
+    models.filter((model) => defaultModelIds.includes(model.id) || model.id in placements).forEach((model) => result[placements[model.id] ?? "unranked"].push(model));
     return result;
   }, [placements]);
 
@@ -65,7 +101,7 @@ export default function RankPage() {
 
   async function submitRanking() {
     const response = await fetch("/api/rankings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category, placements }) });
-    if (response.ok) { setSubmitted(true); setNotice("Your personal tier list is saved to your account."); }
+    if (response.ok) { setSubmitted(true); localStorage.setItem(storageKey(category), JSON.stringify(placements)); setNotice("Saved. Your ballot now contributes to this category’s global score."); }
     else setNotice("We could not save your tier list. Please try again.");
   }
 
@@ -98,6 +134,23 @@ export default function RankPage() {
     setPlacements({});
     localStorage.removeItem(storageKey(category));
     setNotice("This local ballot has been reset.");
+  }
+
+  function openModelPicker() {
+    setPendingModelIds([]);
+    setModelSearch("");
+    setModelPickerOpen(true);
+  }
+
+  function addSelectedModels() {
+    setPlacements((current) => {
+      const next = { ...current };
+      pendingModelIds.forEach((id) => { next[id] = null; });
+      localStorage.setItem(storageKey(category), JSON.stringify(next));
+      return next;
+    });
+    setSubmitted(false);
+    setModelPickerOpen(false);
   }
 
   function createShare() {
@@ -134,10 +187,11 @@ export default function RankPage() {
       {!placements[newestModel.id] && <div className="new-model-prompt"><span className="section-index">New on the board</span><strong>{newestModel.name}</strong><small>{newestModel.release} · {newestModel.description}</small><button className="button acid" onClick={rankNewest}>Propose a rank <span>↗</span></button></div>}
       <label htmlFor="category">Board</label><select id="category" value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}</select>
       <div className="progress-track"><span style={{ width: `${Math.min(100, rankedCount / 5 * 100)}%` }} /></div><div className="progress-copy"><span>{rankedCount} ranked</span><span>{rankedCount > 0 ? "ready to submit" : "1 to submit"}</span></div>
-      <div className="rank-actions">{rankedCount > 0 && <button className="button acid" onClick={submitRanking}>{submitted ? "Update saved list" : "Save tier list"} <span>↗</span></button>}<button className="button" disabled={rankedCount < 5} onClick={() => setShareOpen(true)}>Share <span>↗</span></button></div>
+      <div className="rank-actions">{rankedCount > 0 && <button className="button acid" disabled={boardLoading} onClick={submitRanking}>{submitted ? "Update saved list" : "Save tier list"} <span>↗</span></button>}<button className="button" disabled={!mounted || boardLoading || rankedCount < 5} onClick={() => setShareOpen(true)}>Share <span>↗</span></button></div>
     </aside>
     <section className="rank-workspace" id="personal-editor">
-      {notice && <div className="notice">{notice}</div>}
+      {boardLoading && <div className="notice">Loading your saved {categories.find((item) => item.slug === category)?.name} board…</div>}
+      {!boardLoading && notice && <div className="notice">{notice}</div>}
       <div className="rank-help"><span>Drag models between tiers. Within-tier order is kept for your personal view.</span><button onClick={reset}>Reset ballot</button></div>
       <div className="editor-board">{tiers.map((tier) => <div className={`editor-row ${over === tier ? "drag-over" : ""}`} data-drop-tier={tier} key={tier} onDragEnter={(event) => { event.preventDefault(); setOver(tier); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setOver(tier); }} onDrop={(event) => drop(tier, event)}>
         <div className="editor-label" style={{ background: tierMeta[tier].color }}>{tier}</div>
@@ -145,10 +199,11 @@ export default function RankPage() {
           {byTier[tier].map((model) => <RankCard key={model.id} model={model} onDragStart={(event) => startDrag(model.id, event)} onDragEnd={finishDrag} onCycle={() => cycle(model.id)} />)}
         </div>
       </div>)}</div>
-      <div className={`unranked ${over === "unranked" ? "drag-over" : ""}`} data-drop-tier="unranked" onDragEnter={(event) => { event.preventDefault(); setOver("unranked"); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setOver("unranked"); }} onDrop={(event) => drop(null, event)}><h3>On the bench · unranked</h3><div className="unranked-list">{byTier.unranked.map((model) => <RankCard key={model.id} model={model} onDragStart={(event) => startDrag(model.id, event)} onDragEnd={finishDrag} onCycle={() => cycle(model.id)} />)}</div></div>
-      <section className="criteria-suggestions"><span className="section-index">Keep going</span><h2>Rank the same models by another lens.</h2><p>Your personal opinion changes with the job. Start another private board for a criterion that matters to you.</p><div className="criteria-suggestion-grid">{categories.filter((item) => item.slug !== category).slice(0, 3).map((item) => <Link href={`/rank?category=${item.slug}`} className="criteria-suggestion" key={item.slug}><strong>{item.name}</strong><span>{item.short}</span><small>{item.prompt}</small><b>Start board ↗</b></Link>)}</div><Link className="text-link" href="/proposals">Suggest a new criterion ↗</Link></section>
+      <div className={`unranked ${over === "unranked" ? "drag-over" : ""}`} data-drop-tier="unranked" onDragEnter={(event) => { event.preventDefault(); setOver("unranked"); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setOver("unranked"); }} onDrop={(event) => drop(null, event)}><h3>On the bench · unranked</h3><div className="unranked-list">{byTier.unranked.map((model) => <RankCard key={model.id} model={model} onDragStart={(event) => startDrag(model.id, event)} onDragEnd={finishDrag} onCycle={() => cycle(model.id)} />)}<button type="button" className="add-model-card" onClick={openModelPicker} aria-label="Add a model to this board">+</button></div></div>
+      <section className="criteria-suggestions"><span className="section-index">Keep going</span><h2>Rank the same models by another lens.</h2><p>Your personal opinion changes with the job. Open another private board for a criterion that matters to you.</p><input className="criteria-search" value={categorySearch} onChange={(event) => setCategorySearch(event.target.value)} placeholder="Search all categories..." aria-label="Search all categories" /><div className="criteria-suggestion-grid">{categories.filter((item) => item.slug !== category && `${item.name} ${item.short} ${item.prompt}`.toLowerCase().includes(categorySearch.toLowerCase())).map((item) => <button type="button" onClick={() => { setCategory(item.slug); history.replaceState(null, "", `/rank?category=${item.slug}`); document.querySelector(".rank-sidebar")?.scrollIntoView({ behavior: "smooth" }); }} className="criteria-suggestion" key={item.slug}><strong>{item.name}</strong><span>{item.short}</span><small>{item.prompt}</small><b>Open board ↗</b></button>)}</div><Link className="text-link" href="/proposals">Suggest a new criterion ↗</Link></section>
     </section>
   </main>
   {shareOpen && <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal"><button className="modal-close" onClick={() => setShareOpen(false)}>×</button><span className="section-index">Share this revision</span><h2>Make it permanent.</h2><p>Each share is an immutable local snapshot. Future ballot edits won’t change it.</p><div className="modal-options"><button onClick={createShare}><strong>Copy a link</strong><small>Create a local snapshot URL and copy it.</small></button><button onClick={savePicture}><strong>Save a picture</strong><small>Download a 1200 × 630 vector image.</small></button></div></div></div>}
+  {modelPickerOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="add-model-title"><div className="modal model-picker"><button className="modal-close" onClick={() => setModelPickerOpen(false)}>×</button><span className="section-index">Add models</span><h2 id="add-model-title">Choose what belongs on the bench.</h2><input autoFocus value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="Search models…" aria-label="Search models" /><div className="model-picker-list">{models.filter((model) => !(defaultModelIds.includes(model.id) || model.id in placements) && model.name.toLowerCase().includes(modelSearch.toLowerCase())).map((model) => <label key={model.id}><input type="checkbox" checked={pendingModelIds.includes(model.id)} onChange={() => setPendingModelIds((current) => current.includes(model.id) ? current.filter((id) => id !== model.id) : [...current, model.id])} /><ModelMark model={model} small /><span>{model.name}</span></label>)}{models.every((model) => defaultModelIds.includes(model.id) || model.id in placements) && <p>Every available model is already on this board.</p>}</div><button className="button acid" disabled={pendingModelIds.length === 0} onClick={addSelectedModels}>Done <span>↗</span></button></div></div>}
   </>;
 }

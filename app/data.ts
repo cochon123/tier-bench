@@ -74,6 +74,10 @@ export const tierMeta = {
 
 export type Tier = keyof typeof tierMeta;
 
+export function tierForScore(score: number): Tier {
+  return score >= 5.25 ? "S" : score >= 4.55 ? "A" : score >= 3.8 ? "B" : score >= 3.1 ? "C" : score >= 2.35 ? "D" : "F";
+}
+
 const baseScores: Record<string, number> = {
   "gpt-5-6-sol": 5.72, "claude-opus-5": 5.49, "claude-mythos-5": 5.31, "gemini-3-1-pro": 5.03,
   "claude-sonnet-5": 4.91, "gpt-5-6-luna": 4.82, "kimi-k3": 4.61, "deepseek-v4-pro": 4.38,
@@ -94,7 +98,7 @@ export function leaderboard(category = "overall") {
   return models.map((model, index) => {
     const score = Math.max(1.4, Math.min(5.9, baseScores[model.id] + (offsets[category]?.[model.id] ?? 0)));
     const voters = 1184 - index * 31 + (model.id.length * 7) % 53;
-    const tier: Tier = score >= 5.25 ? "S" : score >= 4.55 ? "A" : score >= 3.8 ? "B" : score >= 3.1 ? "C" : score >= 2.35 ? "D" : "F";
+    const tier = tierForScore(score);
     return { ...model, score, voters, tier };
   }).sort((a, b) => b.score - a.score);
 }
