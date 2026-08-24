@@ -1,13 +1,22 @@
-import { NextResponse } from "next/server";
-import { apiMeta, boardAt, DATA_END, DATA_START, parseDay, validCategory } from "../../_lib/history";
+import { NextResponse } from "next/server.js";
+import { apiMeta, boardAt, parseDay, today, validCategory } from "../../_lib/history.ts";
+import { publicRateLimit, rateLimitResponse } from "../../../_lib/rate-limit.ts";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
+  const limited = await publicRateLimit(request, "leaderboard-history");
+  if (!limited.allowed) return rateLimitResponse(limited.retryAfter);
   const { slug } = await params;
   if (!validCategory(slug)) return NextResponse.json({ error: { code: "category_not_found", message: `Unknown category: ${slug}` } }, { status: 404 });
   const query = new URL(request.url).searchParams;
-  const at = parseDay(query.get("at"), DATA_END);
-  if (at < DATA_START || at > DATA_END) return NextResponse.json({ error: { code: "date_out_of_range", message: `at must be between ${DATA_START} and ${DATA_END}` } }, { status: 400 });
+  const at = parseDay(query.get("at"), today());
+  if (at > today()) return NextResponse.json({ error: { code: "date_out_of_range", message: "at cannot be in the future" } }, { status: 400 });
   const limit = Math.min(100, Math.max(1, Number(query.get("limit")) || 100));
-  const data = boardAt(slug, at).slice(0, limit).map(({ id, name, maker, release, score, tier, rank, voters, confidence, distribution }) => ({ id, name, provider: maker, releasedAt: release, rank, tier, score, voters, confidence, distribution }));
+  let data;
+  try { data = (await boardAt(slug, at)).slice(0, limit); }
+  catch (error) {
+    if (error instanceof RangeError) return NextResponse.json({ error: { code: "date_out_of_range", message: "The requested date is invalid" } }, { status: 400 });
+    console.error("Unable to read historical leaderboard", error);
+    return NextResponse.json({ error: { code: "history_unavailable", message: "Historical data is temporarily unavailable" } }, { status: 503 });
+  }
   return NextResponse.json({ data, meta: apiMeta({ category: slug, at, count: data.length }) }, { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" } });
 }

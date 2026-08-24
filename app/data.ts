@@ -16,6 +16,8 @@ export type Model = {
   price: string;
   description: string;
   logo?: string;
+  inputModalities?: string[];
+  outputModalities?: string[];
 };
 
 export const categories: Category[] = [
@@ -76,31 +78,6 @@ export type Tier = keyof typeof tierMeta;
 
 export function tierForScore(score: number): Tier {
   return score >= 5.25 ? "S" : score >= 4.55 ? "A" : score >= 3.8 ? "B" : score >= 3.1 ? "C" : score >= 2.35 ? "D" : "F";
-}
-
-const baseScores: Record<string, number> = {
-  "gpt-5-6-sol": 5.72, "claude-opus-5": 5.49, "claude-mythos-5": 5.31, "gemini-3-1-pro": 5.03,
-  "claude-sonnet-5": 4.91, "gpt-5-6-luna": 4.82, "kimi-k3": 4.61, "deepseek-v4-pro": 4.38,
-  "gpt-5-6-terra": 4.31, "claude-fable-5": 4.18, "qwen-3-8-max": 3.98, "grok-4-6": 3.83,
-  "mistral-large": 3.69, "gemini-3-7-flash": 3.58, "glm-5-3": 3.43, "muse-glimmer": 3.27,
-  "qwen-3-8-27b": 3.14, "mimo-v2-5-pro": 2.93,
-};
-
-const offsets: Record<string, Record<string, number>> = {
-  chatting: { "claude-fable-5": 1.05, "muse-glimmer": .8, "grok-4-6": .45, "deepseek-v4-pro": -.4 },
-  math: { "deepseek-v4-pro": 1.0, "gpt-5-6-sol": .2, "muse-glimmer": -.8, "claude-fable-5": -.45 },
-  "code-quality": { "claude-sonnet-5": .75, "kimi-k3": .55, "gpt-5-6-sol": .25, "gemini-3-7-flash": -.3 },
-  steerability: { "gpt-5-6-terra": .65, "claude-sonnet-5": .5, "grok-4-6": -.55, "kimi-k3": -.25 },
-  "most-value": { "gemini-3-7-flash": 1.15, "qwen-3-8-27b": 1, "mimo-v2-5-pro": .8, "claude-opus-5": -.75 },
-};
-
-export function leaderboard(category = "overall") {
-  return models.map((model, index) => {
-    const score = Math.max(1.4, Math.min(5.9, baseScores[model.id] + (offsets[category]?.[model.id] ?? 0)));
-    const voters = 1184 - index * 31 + (model.id.length * 7) % 53;
-    const tier = tierForScore(score);
-    return { ...model, score, voters, tier };
-  }).sort((a, b) => b.score - a.score);
 }
 
 export function modelById(id: string) { return models.find((model) => model.id === id); }
