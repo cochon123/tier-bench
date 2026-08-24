@@ -5,6 +5,7 @@ import Link from "next/link";
 import { categories, Model, models, Tier, tierMeta } from "../data";
 import { Header, ModelMark } from "../components";
 import { defaultModelIdSet } from "../lib/model-catalog";
+import type { CatalogApiModel } from "../lib/model-catalog";
 import { Turnstile, turnstileEnabled } from "../turnstile";
 import { useModelCatalog } from "../use-model-catalog";
 
@@ -21,7 +22,6 @@ function RankCard({ model, onDragStart, onDragEnd, onCycle }: { model: Model; on
 }
 
 export default function RankPage() {
-  const { availableModels, catalogLoading } = useModelCatalog();
   const [category, setCategory] = useState("overall");
   const [placements, setPlacements] = useState<Placements>({});
   const [over, setOver] = useState<Tier | "unranked" | null>(null);
@@ -34,10 +34,13 @@ export default function RankPage() {
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelSearch, setModelSearch] = useState("");
   const [pendingModelIds, setPendingModelIds] = useState<string[]>([]);
+  const [pinnedModels, setPinnedModels] = useState<CatalogApiModel[]>([]);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileGeneration, setTurnstileGeneration] = useState(0);
   const draggedModel = useRef<string | null>(null);
   const freshCategory = useRef<string | null>(null);
+  const { availableModels, catalogLoading } = useModelCatalog(pinnedModels);
+  const retiredModelIds = useMemo(() => new Set(pinnedModels.filter((model) => model.status !== "active").map((model) => model.id)), [pinnedModels]);
   const rankedCount = Object.values(placements).filter(Boolean).length;
 
   useEffect(() => {
@@ -76,7 +79,8 @@ export default function RankPage() {
     fetch(`/api/rankings?category=${encodeURIComponent(category)}`, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) return;
-        const data = await response.json() as { placements: Placements | null };
+        const data = await response.json() as { placements: Placements | null; models?: CatalogApiModel[] };
+        setPinnedModels(Array.isArray(data.models) ? data.models : []);
         // A browser draft may predate sign-in. Never replace the work the user
         // can currently see with an older server revision behind their back.
         if (hasLocalDraft) return;
@@ -113,7 +117,12 @@ export default function RankPage() {
 
   async function submitRanking() {
     const response = await fetch("/api/rankings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category, placements, turnstileToken }) });
-    if (response.ok) { setSubmitted(true); localStorage.setItem(storageKey(category), JSON.stringify(placements)); setNotice("Saved. Your ballot now contributes to this category’s global score."); }
+    if (response.ok) {
+      const data = await response.json() as { placements?: Placements };
+      const saved = data.placements ?? placements;
+      setPlacements(saved); setSubmitted(true); localStorage.setItem(storageKey(category), JSON.stringify(saved));
+      setNotice("Saved. Your ballot now contributes to this category’s global score.");
+    }
     else setNotice("We could not save your tier list. Please try again.");
     setTurnstileToken(null);
     setTurnstileGeneration((current) => current + 1);
@@ -219,6 +228,6 @@ export default function RankPage() {
     </section>
   </main>
   {shareOpen && <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal"><button className="modal-close" onClick={() => setShareOpen(false)}>×</button><span className="section-index">Share this revision</span><h2>Make it permanent.</h2><p>Each share is an immutable database snapshot. Future ballot edits won’t change it.</p><div className="modal-options"><button onClick={createShare}><strong>Copy a link</strong><small>Create a durable snapshot URL and copy it.</small></button><button onClick={savePicture}><strong>Save a picture</strong><small>Download a 1200 × 630 vector image.</small></button></div></div></div>}
-  {modelPickerOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="add-model-title"><div className="modal model-picker"><button className="modal-close" onClick={() => setModelPickerOpen(false)}>×</button><span className="section-index">Add models</span><h2 id="add-model-title">Choose what belongs on the bench.</h2><input autoFocus value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="Search models…" aria-label="Search models" /><div className="model-picker-list">{availableModels.filter((model) => !(defaultModelIdSet.has(model.id) || model.id in placements) && `${model.name} ${model.maker} ${model.id}`.toLowerCase().includes(modelSearch.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name)).map((model) => <label key={model.id}><input type="checkbox" checked={pendingModelIds.includes(model.id)} onChange={() => setPendingModelIds((current) => current.includes(model.id) ? current.filter((id) => id !== model.id) : [...current, model.id])} /><ModelMark model={model} small /><span>{model.name}</span></label>)}{catalogLoading && <p>Loading the OpenRouter catalog…</p>}{!catalogLoading && availableModels.every((model) => defaultModelIdSet.has(model.id) || model.id in placements) && <p>Every available model is already on this board.</p>}</div><button className="button acid" disabled={pendingModelIds.length === 0} onClick={addSelectedModels}>Done <span>↗</span></button></div></div>}
+  {modelPickerOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="add-model-title"><div className="modal model-picker"><button className="modal-close" onClick={() => setModelPickerOpen(false)}>×</button><span className="section-index">Add models</span><h2 id="add-model-title">Choose what belongs on the bench.</h2><input autoFocus value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="Search models…" aria-label="Search models" /><div className="model-picker-list">{availableModels.filter((model) => !retiredModelIds.has(model.id) && !(defaultModelIdSet.has(model.id) || model.id in placements) && `${model.name} ${model.maker} ${model.id}`.toLowerCase().includes(modelSearch.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name)).map((model) => <label key={model.id}><input type="checkbox" checked={pendingModelIds.includes(model.id)} onChange={() => setPendingModelIds((current) => current.includes(model.id) ? current.filter((id) => id !== model.id) : [...current, model.id])} /><ModelMark model={model} small /><span>{model.name}</span></label>)}{catalogLoading && <p>Loading the OpenRouter catalog…</p>}{!catalogLoading && availableModels.every((model) => retiredModelIds.has(model.id) || defaultModelIdSet.has(model.id) || model.id in placements) && <p>Every available model is already on this board.</p>}</div><button className="button acid" disabled={pendingModelIds.length === 0} onClick={addSelectedModels}>Done <span>↗</span></button></div></div>}
   </>;
 }

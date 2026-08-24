@@ -4,7 +4,7 @@ import {
   assertSafeCatalogReconciliation,
   buildCatalogSyncPlan,
 } from "../app/lib/openrouter-catalog.ts";
-import { normalizeCatalogPlacements } from "../app/api/_lib/validation.ts";
+import { enforceRetiredModelPolicy, normalizeCatalogPlacements } from "../app/api/_lib/validation.ts";
 import { boardsAcross } from "../app/api/v1/_lib/history.ts";
 
 test("catalog keeps text models, creation time, and canonical identity", () => {
@@ -52,4 +52,23 @@ test("a maximum multi-category history request executes one database query", asy
   const boards = await boardsAcross(["overall", "chatting", "math", "code-quality", "steerability", "most-value"], "2026-01-01", "2026-04-01", "day", execute);
   assert.equal(calls, 1);
   assert.equal(boards.length, 6 * 91);
+});
+
+test("an ancient history range is rejected arithmetically before allocation or database access", async () => {
+  let calls = 0;
+  const execute = async () => { calls += 1; return []; };
+  await assert.rejects(boardsAcross(["overall"], "0001-01-01", "2026-08-24", "day", execute), RangeError);
+  assert.equal(calls, 0);
+});
+
+test("retired ballot models can remain unchanged or be removed, but cannot be newly ranked", () => {
+  const active = new Set(["active/model"]);
+  assert.deepEqual(enforceRetiredModelPolicy({ "active/model": "S", "retired/model": "A" }, { "retired/model": "A" }, active), {
+    ok: true, placements: { "active/model": "S", "retired/model": "A" }, rankedCount: 2,
+  });
+  assert.deepEqual(enforceRetiredModelPolicy({ "active/model": "S", "retired/model": null }, { "retired/model": "A" }, active), {
+    ok: true, placements: { "active/model": "S" }, rankedCount: 1,
+  });
+  assert.match(enforceRetiredModelPolicy({ "retired/model": "S" }, { "retired/model": "A" }, active).error ?? "", /not newly ranked/);
+  assert.match(enforceRetiredModelPolicy({ "retired/model": "S" }, {}, active).error ?? "", /not newly ranked/);
 });

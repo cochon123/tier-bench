@@ -30,7 +30,11 @@ export async function GET(request: Request) {
   if (ids.some((id) => !identityByAlias.has(id))) return NextResponse.json({ error: { code: "model_not_found", message: "One or more model IDs are unknown" } }, { status: 404 });
   let boards;
   try { boards = await boardsAcross([category], from, to, interval); }
-  catch { return NextResponse.json({ error: { code: "range_too_large", message: "Request no more than 92 points" } }, { status: 400 }); }
+  catch (error) {
+    if (error instanceof RangeError) return NextResponse.json({ error: { code: "range_too_large", message: "Request no more than 92 points" } }, { status: 400 });
+    console.error("Unable to read comparison history", error);
+    return NextResponse.json({ error: { code: "history_unavailable", message: "Historical data is temporarily unavailable" } }, { status: 503 });
+  }
   const data = ids.map((requestedId) => { const identity = identityByAlias.get(requestedId)!; return { model: identity.name, id: identity.id, points: historyFor(boards, identity.id) }; });
   return NextResponse.json({ data, meta: apiMeta({ category, from, to, interval, models: ids }) }, { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" } });
 }

@@ -11,6 +11,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   const at = parseDay(query.get("at"), today());
   if (at > today()) return NextResponse.json({ error: { code: "date_out_of_range", message: "at cannot be in the future" } }, { status: 400 });
   const limit = Math.min(100, Math.max(1, Number(query.get("limit")) || 100));
-  const data = (await boardAt(slug, at)).slice(0, limit);
+  let data;
+  try { data = (await boardAt(slug, at)).slice(0, limit); }
+  catch (error) {
+    if (error instanceof RangeError) return NextResponse.json({ error: { code: "date_out_of_range", message: "The requested date is invalid" } }, { status: 400 });
+    console.error("Unable to read historical leaderboard", error);
+    return NextResponse.json({ error: { code: "history_unavailable", message: "Historical data is temporarily unavailable" } }, { status: 503 });
+  }
   return NextResponse.json({ data, meta: apiMeta({ category: slug, at, count: data.length }) }, { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" } });
 }

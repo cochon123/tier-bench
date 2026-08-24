@@ -21,6 +21,11 @@ export function parseDay(value: string | null, fallback: string) {
   return value;
 }
 export function eachDay(from: string, to: string, interval: "day" | "week" = "day") {
+  const startTime = Date.parse(`${from}T00:00:00Z`), endTime = Date.parse(`${to}T00:00:00Z`);
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime < startTime) throw new RangeError("invalid_range");
+  const calendarDays = Math.floor((endTime - startTime) / 86_400_000);
+  const points = interval === "week" ? Math.ceil(calendarDays / 7) + 1 : calendarDays + 1;
+  if (points > 92) throw new RangeError("range_too_large");
   const result: string[] = [];
   const cursor = new Date(`${from}T00:00:00Z`), end = new Date(`${to}T00:00:00Z`);
   const step = interval === "week" ? 7 : 1;

@@ -54,6 +54,19 @@ export function normalizeCatalogPlacements(placements: BallotPlacements, catalog
   return { ok: true as const, placements: normalized, rankedCount: Object.values(normalized).filter(Boolean).length };
 }
 
+export function enforceRetiredModelPolicy(placements: BallotPlacements, prior: BallotPlacements, selectableIds: Set<string>) {
+  const accepted: BallotPlacements = {};
+  for (const [modelId, tier] of Object.entries(placements)) {
+    if (selectableIds.has(modelId)) { accepted[modelId] = tier; continue; }
+    // Moving a retired card to the bench removes it. Ranked retired models may
+    // otherwise survive a save only when their historical opinion is unchanged.
+    if (tier === null) continue;
+    if (prior[modelId] !== tier) return { ok: false as const, error: `Retired model ${modelId} may be kept unchanged or removed, but not newly ranked` };
+    accepted[modelId] = tier;
+  }
+  return { ok: true as const, placements: accepted, rankedCount: Object.values(accepted).filter(Boolean).length };
+}
+
 export function validateText(value: unknown, field: string, max: number) {
   if (typeof value !== "string") return { ok: false as const, error: `${field} must be text` };
   const normalized = value.trim();

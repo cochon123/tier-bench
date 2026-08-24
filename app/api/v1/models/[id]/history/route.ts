@@ -27,5 +27,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const releasedAt = model.released_at ? new Date(model.released_at).toISOString().slice(0, 10) : null;
     const events = releasedAt ? [{ date: releasedAt, type: "catalog_entry", title: `${model.name} entered the tracked catalog` }] : [];
     return NextResponse.json({ data: { model: { id: stableId, canonicalSlug: model.canonical_slug, apiId: model.api_id, name: model.name, provider: model.provider, releasedAt }, series, events }, meta: apiMeta({ from, to, interval, categories: selectedCategories }) }, { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" } });
-  } catch { return NextResponse.json({ error: { code: "range_too_large", message: "Request no more than 92 points per series" } }, { status: 400 }); }
+  } catch (error) {
+    if (error instanceof RangeError) return NextResponse.json({ error: { code: "range_too_large", message: "Request no more than 92 points per series" } }, { status: 400 });
+    console.error("Unable to read model history", error);
+    return NextResponse.json({ error: { code: "history_unavailable", message: "Historical data is temporarily unavailable" } }, { status: 503 });
+  }
 }
