@@ -1,0 +1,26 @@
+name: Sync OpenRouter catalog
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Sync catalog
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$APP_URL"
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error --retry 2 \
+            --request POST "$APP_URL/api/admin/models/sync" \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            --header "Accept: application/json"
+
