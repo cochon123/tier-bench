@@ -16,6 +16,8 @@ export type Model = {
   price: string;
   description: string;
   logo?: string;
+  inputModalities?: string[];
+  outputModalities?: string[];
 };
 
 export const categories: Category[] = [

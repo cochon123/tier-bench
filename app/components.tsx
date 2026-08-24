@@ -39,7 +39,7 @@ export function ModelMark({ model, small = false }: { model: Model; small?: bool
 }
 
 export function ModelPill({ model, score, rank, compact = false }: { model: Model; score?: number; rank?: number; compact?: boolean }) {
-  return <Link href={`/models/${model.id}`} className={`model-pill ${compact ? "compact" : ""}`}>
+  return <Link href={`/models/${encodeURIComponent(model.id)}`} className={`model-pill ${compact ? "compact" : ""}`}>
     {rank && <span className="rank">{String(rank).padStart(2, "0")}</span>}
     <ModelMark model={model} small={compact} />
     <span className="model-copy"><strong>{model.name}</strong></span>

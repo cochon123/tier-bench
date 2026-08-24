@@ -4,43 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { categories, Model, models, Tier, tierMeta } from "../data";
 import { Header, ModelMark } from "../components";
+import { defaultModelIdSet } from "../lib/model-catalog";
 import { Turnstile, turnstileEnabled } from "../turnstile";
+import { useModelCatalog } from "../use-model-catalog";
 
 type Placements = Record<string, Tier | null>;
-type CatalogApiModel = {
-  id: string;
-  name: string;
-  provider: string;
-  releasedAt: string;
-  contextWindow: string;
-  pricing: string;
-  description: string;
-  status: string;
-  isDefault: boolean;
-};
 const tiers = Object.keys(tierMeta) as Tier[];
 const storageKey = (category: string) => `tier-bench:ballot:${category}`;
 const newestModel = [...models].sort((a, b) => new Date(b.release).getTime() - new Date(a.release).getTime())[0];
-const defaultModelIds = models.map((model) => model.id);
-const defaultModelIdSet = new Set(defaultModelIds);
-
-function catalogModel(model: CatalogApiModel): Model {
-  const provider = model.provider || "Unknown";
-  const mark = provider.split(/[\s._-]+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "AI";
-  let hash = 0;
-  for (const character of provider) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
-  return {
-    id: model.id,
-    name: model.name,
-    maker: provider,
-    mark,
-    color: `hsl(${hash % 360} 45% 42%)`,
-    release: model.releasedAt || "Release date unavailable",
-    context: model.contextWindow || "",
-    price: model.pricing || "",
-    description: model.description || "OpenRouter model",
-  };
-}
 
 function RankCard({ model, onDragStart, onDragEnd, onCycle }: { model: Model; onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void; onDragEnd: () => void; onCycle: () => void }) {
   return <button className="tier-card rank-card" draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onCycle} title="Drag to a tier, or tap to move to the next tier">
@@ -50,6 +21,7 @@ function RankCard({ model, onDragStart, onDragEnd, onCycle }: { model: Model; on
 }
 
 export default function RankPage() {
+  const { availableModels, catalogLoading } = useModelCatalog();
   const [category, setCategory] = useState("overall");
   const [placements, setPlacements] = useState<Placements>({});
   const [over, setOver] = useState<Tier | "unranked" | null>(null);
@@ -62,8 +34,6 @@ export default function RankPage() {
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelSearch, setModelSearch] = useState("");
   const [pendingModelIds, setPendingModelIds] = useState<string[]>([]);
-  const [availableModels, setAvailableModels] = useState<Model[]>(models);
-  const [catalogLoading, setCatalogLoading] = useState(true);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileGeneration, setTurnstileGeneration] = useState(0);
   const draggedModel = useRef<string | null>(null);
@@ -82,24 +52,6 @@ export default function RankPage() {
       setPlacements({});
       setSubmitted(false);
     }
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch("/api/v1/models", { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) return;
-        const body = await response.json() as { data?: CatalogApiModel[] };
-        if (!Array.isArray(body.data)) return;
-        const merged = new Map(models.map((model) => [model.id, model]));
-        body.data
-          .filter((model) => model && model.status === "active" && typeof model.id === "string" && typeof model.name === "string")
-          .forEach((model) => { if (!defaultModelIdSet.has(model.id)) merged.set(model.id, catalogModel(model)); });
-        setAvailableModels([...merged.values()]);
-      })
-      .catch(() => {})
-      .finally(() => { if (!controller.signal.aborted) setCatalogLoading(false); });
-    return () => controller.abort();
   }, []);
 
   useEffect(() => {
