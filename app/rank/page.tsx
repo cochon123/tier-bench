@@ -64,8 +64,12 @@ export default function RankPage() {
       if (pending && categories.some((item) => item.slug === pending.category)) {
         setPendingSave(pending);
         setCategory(pending.category);
+        setPlacements(pending.placements);
+        setSubmitted(false);
+        localStorage.setItem(storageKey(pending.category), JSON.stringify(pending.placements));
         setNotice("Sign-in complete. Publishing your tier list…");
       } else {
+        clearPendingBallotSave(sessionStorage);
         const cleanUrl = new URL(window.location.href);
         cleanUrl.searchParams.delete("publish");
         history.replaceState(null, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
@@ -137,8 +141,8 @@ export default function RankPage() {
     document.getElementById("personal-editor")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  async function submitRanking(targetCategory = category, targetPlacements = placements) {
-    if (saveInFlight.current) return;
+  async function submitRanking(targetCategory = category, targetPlacements = placements): Promise<boolean> {
+    if (saveInFlight.current) return false;
     saveInFlight.current = true;
     setSaving(true);
     try {
@@ -149,11 +153,14 @@ export default function RankPage() {
         localStorage.setItem(storageKey(targetCategory), JSON.stringify(saved));
         if (targetCategory === category) { setPlacements(saved); setSubmitted(true); }
         setNotice("Saved. Your ballot now contributes to this category’s global score.");
+        return true;
       } else {
         setNotice(data?.error || `We could not save your tier list (error ${response.status}). Please try again.`);
+        return false;
       }
     } catch {
       setNotice("We could not reach the save service. Check your connection and try again.");
+      return false;
     } finally {
       saveInFlight.current = false;
       setSaving(false);
@@ -162,10 +169,18 @@ export default function RankPage() {
     }
   }
 
+  function finishPendingSave() {
+    clearPendingBallotSave(sessionStorage);
+    setPendingSave(null);
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete("publish");
+    history.replaceState(null, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
+  }
+
   function requestSave() {
     if (!authLoaded || saving) return;
     if (isSignedIn) {
-      void submitRanking();
+      void submitRanking().then((saved) => { if (saved && pendingSave) finishPendingSave(); });
       return;
     }
     const pending = { category, placements, requestedAt: Date.now() };
@@ -178,12 +193,7 @@ export default function RankPage() {
   useEffect(() => {
     if (!pendingSave || automaticSaveStarted.current || !authLoaded || !isSignedIn || boardLoading || (turnstileEnabled && !turnstileToken)) return;
     automaticSaveStarted.current = true;
-    clearPendingBallotSave(sessionStorage);
-    setPendingSave(null);
-    const cleanUrl = new URL(window.location.href);
-    cleanUrl.searchParams.delete("publish");
-    history.replaceState(null, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
-    void submitRanking(pendingSave.category, pendingSave.placements);
+    void submitRanking(pendingSave.category, pendingSave.placements).then((saved) => { if (saved) finishPendingSave(); });
   }, [authLoaded, boardLoading, isSignedIn, pendingSave, turnstileToken]);
 
   function startDrag(modelId: string, event: React.DragEvent<HTMLButtonElement>) {
