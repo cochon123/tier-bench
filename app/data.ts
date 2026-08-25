@@ -77,7 +77,10 @@ export const tierMeta = {
 export type Tier = keyof typeof tierMeta;
 
 export function tierForScore(score: number): Tier {
-  return score >= 5.25 ? "S" : score >= 4.55 ? "A" : score >= 3.8 ? "B" : score >= 3.1 ? "C" : score >= 2.35 ? "D" : "F";
+  // Each saved tier maps to an integer score from 6 (S) through 1 (F).
+  // Midpoint boundaries guarantee that a one-voter community result renders
+  // in exactly the tier that voter selected while means still round naturally.
+  return score >= 5.5 ? "S" : score >= 4.5 ? "A" : score >= 3.5 ? "B" : score >= 2.5 ? "C" : score >= 1.5 ? "D" : "F";
 }
 
 export function modelById(id: string) { return models.find((model) => model.id === id); }
