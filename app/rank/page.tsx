@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useAuth, useClerk } from "@clerk/nextjs";
 import { categories, Model, models, Tier, tierMeta } from "../data";
 import { Header, ModelMark } from "../components";
 import { defaultModelIdSet } from "../lib/model-catalog";
 import type { CatalogApiModel } from "../lib/model-catalog";
 import { Turnstile, turnstileEnabled } from "../turnstile";
 import { useModelCatalog } from "../use-model-catalog";
+import { clearPendingBallotSave, PendingBallotSave, readPendingBallotSave, storePendingBallotSave } from "./pending-save";
 
 type Placements = Record<string, Tier | null>;
 const tiers = Object.keys(tierMeta) as Tier[];
@@ -22,6 +24,8 @@ function RankCard({ model, onDragStart, onDragEnd, onTouchStart, onTouchMove, on
 }
 
 export default function RankPage() {
+  const { isLoaded: authLoaded, isSignedIn } = useAuth();
+  const clerk = useClerk();
   const [category, setCategory] = useState("overall");
   const [placements, setPlacements] = useState<Placements>({});
   const [over, setOver] = useState<Tier | "unranked" | null>(null);
@@ -37,10 +41,14 @@ export default function RankPage() {
   const [pinnedModels, setPinnedModels] = useState<CatalogApiModel[]>([]);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileGeneration, setTurnstileGeneration] = useState(0);
+  const [pendingSave, setPendingSave] = useState<PendingBallotSave | null>(null);
+  const [saving, setSaving] = useState(false);
   const draggedModel = useRef<string | null>(null);
   const touchDrag = useRef<{ modelId: string; moved: boolean } | null>(null);
   const suppressNextClick = useRef(false);
   const freshCategory = useRef<string | null>(null);
+  const automaticSaveStarted = useRef(false);
+  const saveInFlight = useRef(false);
   const { availableModels, catalogLoading } = useModelCatalog(pinnedModels);
   const retiredModelIds = useMemo(() => new Set(pinnedModels.filter((model) => model.status !== "active").map((model) => model.id)), [pinnedModels]);
   const rankedCount = Object.values(placements).filter(Boolean).length;
@@ -51,6 +59,18 @@ export default function RankPage() {
     const requestedCategory = params.get("category");
     const targetCategory = requestedCategory && categories.some((item) => item.slug === requestedCategory) ? requestedCategory : "overall";
     if (requestedCategory && categories.some((item) => item.slug === requestedCategory)) setCategory(requestedCategory);
+    if (params.get("publish") === "pending") {
+      const pending = readPendingBallotSave(sessionStorage);
+      if (pending && categories.some((item) => item.slug === pending.category)) {
+        setPendingSave(pending);
+        setCategory(pending.category);
+        setNotice("Sign-in complete. Publishing your tier list…");
+      } else {
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete("publish");
+        history.replaceState(null, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
+      }
+    }
     if (params.get("fresh") === "1") {
       freshCategory.current = targetCategory;
       localStorage.removeItem(storageKey(targetCategory));
@@ -117,13 +137,17 @@ export default function RankPage() {
     document.getElementById("personal-editor")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  async function submitRanking() {
+  async function submitRanking(targetCategory = category, targetPlacements = placements) {
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
+    setSaving(true);
     try {
-      const response = await fetch("/api/rankings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category, placements, turnstileToken }) });
+      const response = await fetch("/api/rankings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category: targetCategory, placements: targetPlacements, turnstileToken }) });
       const data = await response.json().catch(() => null) as { placements?: Placements; error?: string } | null;
       if (response.ok) {
-        const saved = data?.placements ?? placements;
-        setPlacements(saved); setSubmitted(true); localStorage.setItem(storageKey(category), JSON.stringify(saved));
+        const saved = data?.placements ?? targetPlacements;
+        localStorage.setItem(storageKey(targetCategory), JSON.stringify(saved));
+        if (targetCategory === category) { setPlacements(saved); setSubmitted(true); }
         setNotice("Saved. Your ballot now contributes to this category’s global score.");
       } else {
         setNotice(data?.error || `We could not save your tier list (error ${response.status}). Please try again.`);
@@ -131,10 +155,36 @@ export default function RankPage() {
     } catch {
       setNotice("We could not reach the save service. Check your connection and try again.");
     } finally {
+      saveInFlight.current = false;
+      setSaving(false);
       setTurnstileToken(null);
       setTurnstileGeneration((current) => current + 1);
     }
   }
+
+  function requestSave() {
+    if (!authLoaded || saving) return;
+    if (isSignedIn) {
+      void submitRanking();
+      return;
+    }
+    const pending = { category, placements, requestedAt: Date.now() };
+    storePendingBallotSave(sessionStorage, pending);
+    setPendingSave(pending);
+    const returnUrl = `/rank?category=${encodeURIComponent(category)}&publish=pending`;
+    clerk.openSignIn({ forceRedirectUrl: returnUrl, signUpForceRedirectUrl: returnUrl });
+  }
+
+  useEffect(() => {
+    if (!pendingSave || automaticSaveStarted.current || !authLoaded || !isSignedIn || boardLoading || (turnstileEnabled && !turnstileToken)) return;
+    automaticSaveStarted.current = true;
+    clearPendingBallotSave(sessionStorage);
+    setPendingSave(null);
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete("publish");
+    history.replaceState(null, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
+    void submitRanking(pendingSave.category, pendingSave.placements);
+  }, [authLoaded, boardLoading, isSignedIn, pendingSave, turnstileToken]);
 
   function startDrag(modelId: string, event: React.DragEvent<HTMLButtonElement>) {
     draggedModel.current = modelId;
@@ -269,7 +319,7 @@ export default function RankPage() {
       <label htmlFor="category">Board</label><select id="category" value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}</select>
       <div className="progress-track"><span style={{ width: `${Math.min(100, rankedCount / 5 * 100)}%` }} /></div><div className="progress-copy"><span>{rankedCount} ranked</span><span>{rankedCount >= 5 ? "ready to submit" : `${5 - rankedCount} to submit`}</span></div>
       <Turnstile key={turnstileGeneration} onToken={setTurnstileToken} />
-      <div className="rank-actions">{rankedCount > 0 && <button className="button acid" disabled={boardLoading || rankedCount < 5 || (turnstileEnabled && !turnstileToken)} onClick={submitRanking}>{submitted ? "Update saved list" : "Save tier list"} <span>↗</span></button>}<button className="button" title={!submitted ? "Save this draft before sharing" : undefined} disabled={!mounted || boardLoading || rankedCount < 5 || !submitted || (turnstileEnabled && !turnstileToken)} onClick={() => setShareOpen(true)}>{submitted ? "Share" : "Save before sharing"} <span>↗</span></button></div>
+      <div className="rank-actions">{rankedCount > 0 && <button className="button acid" disabled={!authLoaded || saving || boardLoading || rankedCount < 5 || (Boolean(isSignedIn) && turnstileEnabled && !turnstileToken)} onClick={requestSave}>{saving ? "Saving…" : submitted ? "Update saved list" : "Save tier list"} <span>↗</span></button>}<button className="button" title={!submitted ? "Save this draft before sharing" : undefined} disabled={!mounted || saving || boardLoading || rankedCount < 5 || !submitted || (turnstileEnabled && !turnstileToken)} onClick={() => setShareOpen(true)}>{submitted ? "Share" : "Save before sharing"} <span>↗</span></button></div>
     </aside>
     <section className="rank-workspace" id="personal-editor">
       {boardLoading && <div className="notice">Loading your saved {categories.find((item) => item.slug === category)?.name} board…</div>}
