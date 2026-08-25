@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
-import { dark } from "@clerk/ui/themes";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -12,7 +11,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <ClerkProvider
       appearance={{
-        theme: dark,
         variables: {
           colorPrimary: "#d8ff55",
           colorPrimaryForeground: "#090909",
