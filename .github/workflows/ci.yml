@@ -80,14 +80,14 @@ jobs:
           trap 'docker rm --force "$container_id" >/dev/null' EXIT
           response=""
           for attempt in {1..30}; do
-            if response=$(curl --fail --silent --show-error http://127.0.0.1:3000/api/health); then
+            if response=$(curl --fail --silent --show-error http://localhost:3000/api/health); then
               break
             fi
             sleep 1
           done
           if test -z "$response"; then
             docker logs "$container_id"
-            curl --silent --show-error http://127.0.0.1:3000/api/health || true
+            curl --silent --show-error http://localhost:3000/api/health || true
             exit 1
           fi
           node -e 'const body = JSON.parse(process.argv[1]); if (body.status !== "ok") process.exit(1)' "$response"
