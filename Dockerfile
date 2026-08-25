@@ -48,7 +48,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 COPY --from=deps --chown=nextjs:nodejs /app/node_modules/postgres ./node_modules/postgres
 USER nextjs
 EXPOSE 3000
-ENV HOSTNAME=127.0.0.1
+ENV HOSTNAME=localhost
 ENV PORT=3000
 # Apply any pending schema migrations from the same immutable release image
 # before accepting traffic. The migration runner is idempotent.

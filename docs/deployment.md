@@ -74,8 +74,13 @@ If port 3000 is already occupied on a shared VPS, set `APP_PORT` in
 `proxy_pass` target to match. The container health check follows the same
 setting automatically.
 
+Keep `APP_HOSTNAME=localhost` (the default). Although `127.0.0.1` is also a
+loopback address, Next.js 16 can misclassify middleware rewrites when that
+literal is used behind TLS termination and proxy them back to its HTTP listener
+as HTTPS.
+
 `docker-compose.production.yml` uses Linux host networking, binds the Next.js
-listener to loopback, runs as the image's unprivileged `nextjs` user, uses a
+listener to `localhost`, runs as the image's unprivileged `nextjs` user, uses a
 read-only root filesystem, and restarts a failed process. Nginx remains the only
 public application listener. Host networking is intentional for the supported
 VPS deployment and is not portable to Docker Desktop in the same way.
