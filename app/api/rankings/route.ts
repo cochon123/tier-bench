@@ -38,7 +38,13 @@ export async function POST(request: Request) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!sql) return databaseUnavailable();
-  const limited = await rateLimit(`ballot:${userId}`, 30, 60_000);
+  let limited: Awaited<ReturnType<typeof rateLimit>>;
+  try {
+    limited = await rateLimit(`ballot:${userId}`, 30, 60_000);
+  } catch (error) {
+    console.error("Unable to apply ballot rate limit", error);
+    return NextResponse.json({ error: "The save service is not ready. Please run the database migrations and try again." }, { status: 503 });
+  }
   if (!limited.allowed) return rateLimitResponse(limited.retryAfter);
   let body: unknown;
   try { body = await request.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }

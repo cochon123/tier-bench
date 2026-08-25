@@ -50,4 +50,6 @@ USER nextjs
 EXPOSE 3000
 ENV HOSTNAME=127.0.0.1
 ENV PORT=3000
-CMD ["node", "server.js"]
+# Apply any pending schema migrations from the same immutable release image
+# before accepting traffic. The migration runner is idempotent.
+CMD ["sh", "-c", "node db/migrate.mjs && exec node server.js"]
