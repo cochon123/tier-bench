@@ -5,6 +5,7 @@ out
 *.tsbuildinfo
 .DS_Store
 .vercel
+.data/
 
 # Local and production secrets. Keep the checked-in template below.
 .env*

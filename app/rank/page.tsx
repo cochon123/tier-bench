@@ -14,8 +14,8 @@ const tiers = Object.keys(tierMeta) as Tier[];
 const storageKey = (category: string) => `tier-bench:ballot:${category}`;
 const newestModel = [...models].sort((a, b) => new Date(b.release).getTime() - new Date(a.release).getTime())[0];
 
-function RankCard({ model, onDragStart, onDragEnd, onCycle }: { model: Model; onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void; onDragEnd: () => void; onCycle: () => void }) {
-  return <button className="tier-card rank-card" draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onCycle} title="Drag to a tier, or tap to move to the next tier">
+function RankCard({ model, onDragStart, onDragEnd, onTouchStart, onTouchMove, onTouchEnd, onCycle }: { model: Model; onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void; onDragEnd: () => void; onTouchStart: (event: React.PointerEvent<HTMLButtonElement>) => void; onTouchMove: (event: React.PointerEvent<HTMLButtonElement>) => void; onTouchEnd: (event: React.PointerEvent<HTMLButtonElement>) => void; onCycle: () => void }) {
+  return <button className="tier-card rank-card" draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onPointerDown={onTouchStart} onPointerMove={onTouchMove} onPointerUp={onTouchEnd} onPointerCancel={onDragEnd} onClick={onCycle} title="Drag to a tier, or tap to move to the next tier">
     <ModelMark model={model} small />
     <span className="model-copy"><strong>{model.name}</strong></span>
   </button>;
@@ -38,6 +38,8 @@ export default function RankPage() {
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileGeneration, setTurnstileGeneration] = useState(0);
   const draggedModel = useRef<string | null>(null);
+  const touchDrag = useRef<{ modelId: string; moved: boolean } | null>(null);
+  const suppressNextClick = useRef(false);
   const freshCategory = useRef<string | null>(null);
   const { availableModels, catalogLoading } = useModelCatalog(pinnedModels);
   const retiredModelIds = useMemo(() => new Set(pinnedModels.filter((model) => model.status !== "active").map((model) => model.id)), [pinnedModels]);
@@ -116,16 +118,22 @@ export default function RankPage() {
   }
 
   async function submitRanking() {
-    const response = await fetch("/api/rankings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category, placements, turnstileToken }) });
-    if (response.ok) {
-      const data = await response.json() as { placements?: Placements };
-      const saved = data.placements ?? placements;
-      setPlacements(saved); setSubmitted(true); localStorage.setItem(storageKey(category), JSON.stringify(saved));
-      setNotice("Saved. Your ballot now contributes to this category’s global score.");
+    try {
+      const response = await fetch("/api/rankings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ category, placements, turnstileToken }) });
+      const data = await response.json().catch(() => null) as { placements?: Placements; error?: string } | null;
+      if (response.ok) {
+        const saved = data?.placements ?? placements;
+        setPlacements(saved); setSubmitted(true); localStorage.setItem(storageKey(category), JSON.stringify(saved));
+        setNotice("Saved. Your ballot now contributes to this category’s global score.");
+      } else {
+        setNotice(data?.error || `We could not save your tier list (error ${response.status}). Please try again.`);
+      }
+    } catch {
+      setNotice("We could not reach the save service. Check your connection and try again.");
+    } finally {
+      setTurnstileToken(null);
+      setTurnstileGeneration((current) => current + 1);
     }
-    else setNotice("We could not save your tier list. Please try again.");
-    setTurnstileToken(null);
-    setTurnstileGeneration((current) => current + 1);
   }
 
   function startDrag(modelId: string, event: React.DragEvent<HTMLButtonElement>) {
@@ -136,7 +144,57 @@ export default function RankPage() {
 
   function finishDrag() {
     draggedModel.current = null;
+    touchDrag.current = null;
     setOver(null);
+  }
+
+  function dropTierAtPoint(clientX: number, clientY: number): Tier | null | undefined {
+    const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-drop-tier]");
+    const dropTier = target?.dataset.dropTier;
+    if (dropTier === "unranked") return null;
+    return dropTier && tiers.includes(dropTier as Tier) ? dropTier as Tier : undefined;
+  }
+
+  function startTouchDrag(modelId: string, event: React.PointerEvent<HTMLButtonElement>) {
+    if (event.pointerType !== "touch") return;
+    touchDrag.current = { modelId, moved: false };
+    draggedModel.current = modelId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveTouchDrag(event: React.PointerEvent<HTMLButtonElement>) {
+    const drag = touchDrag.current;
+    if (!drag) return;
+    if (!drag.moved) {
+      const distance = Math.hypot(event.clientX - event.currentTarget.getBoundingClientRect().left - event.currentTarget.clientWidth / 2, event.clientY - event.currentTarget.getBoundingClientRect().top - event.currentTarget.clientHeight / 2);
+      if (distance < 8) return;
+      drag.moved = true;
+    }
+    event.preventDefault();
+    const targetTier = dropTierAtPoint(event.clientX, event.clientY);
+    if (targetTier !== undefined) setOver(targetTier ?? "unranked");
+  }
+
+  function endTouchDrag(event: React.PointerEvent<HTMLButtonElement>) {
+    const drag = touchDrag.current;
+    if (!drag) return;
+    if (drag.moved) {
+      event.preventDefault();
+      suppressNextClick.current = true;
+      const targetTier = dropTierAtPoint(event.clientX, event.clientY);
+      if (targetTier !== undefined) {
+        place(drag.modelId, targetTier);
+      }
+    }
+    finishDrag();
+  }
+
+  function cycleFromCard(modelId: string) {
+    if (suppressNextClick.current) {
+      suppressNextClick.current = false;
+      return;
+    }
+    cycle(modelId);
   }
 
   function drop(tier: Tier | null, event: React.DragEvent<HTMLElement>) {
@@ -220,10 +278,10 @@ export default function RankPage() {
       <div className="editor-board">{tiers.map((tier) => <div className={`editor-row ${over === tier ? "drag-over" : ""}`} data-drop-tier={tier} key={tier} onDragEnter={(event) => { event.preventDefault(); setOver(tier); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setOver(tier); }} onDrop={(event) => drop(tier, event)}>
         <div className="editor-label" style={{ background: tierMeta[tier].color }}>{tier}</div>
         <div className="editor-dropzone">
-          {byTier[tier].map((model) => <RankCard key={model.id} model={model} onDragStart={(event) => startDrag(model.id, event)} onDragEnd={finishDrag} onCycle={() => cycle(model.id)} />)}
+          {byTier[tier].map((model) => <RankCard key={model.id} model={model} onDragStart={(event) => startDrag(model.id, event)} onDragEnd={finishDrag} onTouchStart={(event) => startTouchDrag(model.id, event)} onTouchMove={moveTouchDrag} onTouchEnd={endTouchDrag} onCycle={() => cycleFromCard(model.id)} />)}
         </div>
       </div>)}</div>
-      <div className={`unranked ${over === "unranked" ? "drag-over" : ""}`} data-drop-tier="unranked" onDragEnter={(event) => { event.preventDefault(); setOver("unranked"); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setOver("unranked"); }} onDrop={(event) => drop(null, event)}><h3>On the bench · unranked</h3><div className="unranked-list">{byTier.unranked.map((model) => <RankCard key={model.id} model={model} onDragStart={(event) => startDrag(model.id, event)} onDragEnd={finishDrag} onCycle={() => cycle(model.id)} />)}<button type="button" className="add-model-card" onClick={openModelPicker} aria-label="Add a model to this board">+</button></div></div>
+      <div className={`unranked ${over === "unranked" ? "drag-over" : ""}`} data-drop-tier="unranked" onDragEnter={(event) => { event.preventDefault(); setOver("unranked"); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setOver("unranked"); }} onDrop={(event) => drop(null, event)}><h3>On the bench · unranked</h3><div className="unranked-list">{byTier.unranked.map((model) => <RankCard key={model.id} model={model} onDragStart={(event) => startDrag(model.id, event)} onDragEnd={finishDrag} onTouchStart={(event) => startTouchDrag(model.id, event)} onTouchMove={moveTouchDrag} onTouchEnd={endTouchDrag} onCycle={() => cycleFromCard(model.id)} />)}<button type="button" className="add-model-card" onClick={openModelPicker} aria-label="Add a model to this board">+</button></div></div>
       <section className="criteria-suggestions"><span className="section-index">Keep going</span><h2>Rank the same models by another lens.</h2><p>Your personal opinion changes with the job. Open another private board for a criterion that matters to you.</p><input className="criteria-search" value={categorySearch} onChange={(event) => setCategorySearch(event.target.value)} placeholder="Search all categories..." aria-label="Search all categories" /><div className="criteria-suggestion-grid">{categories.filter((item) => item.slug !== category && `${item.name} ${item.short} ${item.prompt}`.toLowerCase().includes(categorySearch.toLowerCase())).map((item) => <button type="button" onClick={() => { setCategory(item.slug); history.replaceState(null, "", `/rank?category=${item.slug}`); document.querySelector(".rank-sidebar")?.scrollIntoView({ behavior: "smooth" }); }} className="criteria-suggestion" key={item.slug}><strong>{item.name}</strong><span>{item.short}</span><small>{item.prompt}</small><b>Open board ↗</b></button>)}</div><Link className="text-link" href="/proposals">Suggest a new criterion ↗</Link></section>
     </section>
   </main>
