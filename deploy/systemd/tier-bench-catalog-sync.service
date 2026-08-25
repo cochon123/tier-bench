@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh the tier/bench OpenRouter model catalog
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/opt/tier-bench/.env.production
+ExecStart=/usr/bin/curl --fail-with-body --silent --show-error --retry 2 --request POST http://localhost:${APP_PORT}/api/admin/models/sync --header "Authorization: Bearer ${CRON_SECRET}" --header "Accept: application/json"
+

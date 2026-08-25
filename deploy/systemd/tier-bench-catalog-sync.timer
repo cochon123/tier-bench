@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh the tier/bench OpenRouter model catalog every ten minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Persistent=true
+Unit=tier-bench-catalog-sync.service
+
+[Install]
+WantedBy=timers.target
+

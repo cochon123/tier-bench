@@ -55,6 +55,21 @@ curl --fail --silent --show-error http://127.0.0.1:3000/api/health
 docker compose --env-file .env.production -f docker-compose.production.yml ps
 ```
 
+On a VPS, install the supplied catalog-sync timer so new OpenRouter text
+models are imported every ten minutes:
+
+```sh
+sudo cp deploy/systemd/tier-bench-catalog-sync.* /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now tier-bench-catalog-sync.timer
+sudo systemctl start tier-bench-catalog-sync.service
+```
+
+Set `OPENROUTER_CATALOG_SYNC_ENABLED=true` and a strong `CRON_SECRET` in
+`.env.production` before enabling the timer. Check the last run with
+`systemctl status tier-bench-catalog-sync.service` and `journalctl -u
+tier-bench-catalog-sync.service`.
+
 The migration command is intentionally explicit and runs the migration code
 and SQL shipped in the same immutable image as the application. Do not silently
 start a release if migrations fail. Re-running it is safe: applied versions are
