@@ -6,6 +6,4 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 EnvironmentFile=/opt/tier-bench/.env.production
-# Supply the bearer token through curl's stdin config so it is not exposed in
-# the process command line while the request is running.
-ExecStart=/bin/sh -ec 'echo "header = \"Authorization: Bearer $CRON_SECRET\"" | /usr/bin/curl --config - --fail-with-body --silent --show-error --retry 2 --request POST "http://localhost:$APP_PORT/api/admin/models/sync" --header "Accept: application/json"'
+ExecStart=/usr/local/bin/tier-bench-catalog-sync

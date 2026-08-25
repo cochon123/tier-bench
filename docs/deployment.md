@@ -59,7 +59,8 @@ On a VPS, install the supplied catalog-sync timer so new OpenRouter text
 models are imported every ten minutes:
 
 ```sh
-sudo cp deploy/systemd/tier-bench-catalog-sync.* /etc/systemd/system/
+sudo install -m 0755 deploy/systemd/tier-bench-catalog-sync.sh /usr/local/bin/tier-bench-catalog-sync
+sudo cp deploy/systemd/tier-bench-catalog-sync.service deploy/systemd/tier-bench-catalog-sync.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now tier-bench-catalog-sync.timer
 sudo systemctl start tier-bench-catalog-sync.service
