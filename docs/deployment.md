@@ -69,6 +69,11 @@ build arguments.
 The Turnstile site key is public and is embedded at build time as well; its
 secret is supplied only through the runtime environment.
 
+If port 3000 is already occupied on a shared VPS, set `APP_PORT` in
+`.env.production` to another unused loopback port and update the Nginx
+`proxy_pass` target to match. The container health check follows the same
+setting automatically.
+
 `docker-compose.production.yml` uses Linux host networking, binds the Next.js
 listener to loopback, runs as the image's unprivileged `nextjs` user, uses a
 read-only root filesystem, and restarts a failed process. Nginx remains the only
