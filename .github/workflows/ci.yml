@@ -30,6 +30,12 @@ jobs:
   postgres-migrations:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # These are deliberately non-secret, CI-only placeholders. The production
+    # image guard checks live-key prefixes, while the tests never call Clerk.
+    env:
+      DATABASE_URL: postgresql://postgres@127.0.0.1:5432/tier_bench?sslmode=disable
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_live_Y2ktY2xlcmstMDAuY2xlcmsuYWNjb3VudHMuZGV2JA==
+      CLERK_SECRET_KEY: sk_live_ci-placeholder
     services:
       postgres:
         image: postgres:16-alpine
@@ -44,8 +50,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    env:
-      DATABASE_URL: postgresql://postgres@127.0.0.1:5432/tier_bench?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -56,11 +60,10 @@ jobs:
       - name: Build production image with public Clerk configuration
         shell: bash
         run: >-
-          clerk_publishable_key="pk_test_$(printf 'ci-clerk-00.clerk.accounts.dev$' | base64 -w0)";
           docker build
           --tag tier-bench:ci
           --build-arg NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000
-          --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="$clerk_publishable_key"
+          --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"
           --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
           --build-arg NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
           --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/rank
@@ -76,7 +79,11 @@ jobs:
       - name: Smoke-test the container health route
         shell: bash
         run: |
-          container_id=$(docker run --detach --network host --env DATABASE_URL tier-bench:ci)
+          container_id=$(docker run --detach --network host \
+            --env DATABASE_URL \
+            --env NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY \
+            --env CLERK_SECRET_KEY \
+            tier-bench:ci)
           trap 'docker rm --force "$container_id" >/dev/null' EXIT
           response=""
           for attempt in {1..30}; do
