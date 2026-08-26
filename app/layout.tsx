@@ -28,6 +28,20 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           fontFamily: "Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif",
           fontFamilyButtons: "Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif",
         },
+        elements: {
+          socialButtonsBlockButton: {
+            backgroundColor: "#191919",
+            borderColor: "#3c3c38",
+            color: "#f5f3ed",
+            "&:hover": {
+              backgroundColor: "#242422",
+              borderColor: "#5a5a54",
+            },
+          },
+          socialButtonsBlockButtonText: {
+            color: "#f5f3ed",
+          },
+        },
       }}
     >
       <html lang="en"><body>{children}</body></html>

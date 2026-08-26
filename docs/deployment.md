@@ -15,7 +15,11 @@ public interface. A managed database URL works as well.
 3. Copy `.env.example` to `.env.production` on the VPS. Replace every
    placeholder with production values, including production Clerk keys and a
    least-privilege PostgreSQL user. Set permissions to `chmod 600
-   .env.production`.
+   .env.production`. Clerk's keys must come from the Clerk Dashboard's
+   **Production** instance: the publishable key starts with `pk_live_` and the
+   secret key starts with `sk_live_`. A `pk_test_` key makes Clerk display the
+   Development mode banner. The production image deliberately refuses to build
+   or start with test keys.
 4. Confirm PostgreSQL accepts the least-privilege application user at the
    `DATABASE_URL` in `.env.production`. The supplied local-VPS example uses
    `127.0.0.1`; do not change PostgreSQL to listen on a public interface.

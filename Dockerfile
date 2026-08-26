@@ -27,7 +27,9 @@ ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL} \
   NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+# A test publishable key makes Clerk show its Development mode banner and is
+# unsafe for a public deployment. Refuse to bake one into the browser bundle.
+RUN node scripts/validate-production-clerk-env.mjs public && npm run build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
@@ -44,6 +46,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # The standalone trace contains everything needed by server.js, but a directly
 # executed migration is outside that trace. Include its SQL and one dependency.
 COPY --from=builder --chown=nextjs:nodejs /app/db ./db
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/validate-production-clerk-env.mjs ./scripts/validate-production-clerk-env.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 COPY --from=deps --chown=nextjs:nodejs /app/node_modules/postgres ./node_modules/postgres
 USER nextjs
@@ -52,4 +55,4 @@ ENV HOSTNAME=localhost
 ENV PORT=3000
 # Apply any pending schema migrations from the same immutable release image
 # before accepting traffic. The migration runner is idempotent.
-CMD ["sh", "-c", "node db/migrate.mjs && exec node server.js"]
+CMD ["sh", "-c", "node scripts/validate-production-clerk-env.mjs server && node db/migrate.mjs && exec node server.js"]
