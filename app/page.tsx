@@ -61,6 +61,8 @@ export default function Home() {
 
   useEffect(() => {
     if (!user) { setRankedNewest(false); return; }
+    setRankedNewest(false);
+    const controller = new AbortController();
     const storageKey = "tier-bench:ballot:overall";
     const checkPlacement = (raw: string | null) => {
       if (!raw) return false;
@@ -70,11 +72,12 @@ export default function Home() {
       } catch { return false; }
     };
     if (checkPlacement(localStorage.getItem(storageKey))) setRankedNewest(true);
-    fetch("/api/rankings?category=overall")
+    fetch("/api/rankings?category=overall", { signal: controller.signal })
       .then((response) => response.ok ? response.json() as Promise<{ placements: Record<string, string | null> | null }> : null)
       .then((data) => setRankedNewest(Boolean(data?.placements?.[newestModel.id])))
       .catch(() => {});
-  }, [user]);
+    return () => controller.abort();
+  }, [newestModel.id, user]);
 
   function toggleModel(id: string) { setActiveModelIds((current) => current.includes(id) ? current.filter((modelId) => modelId !== id) : [...current, id]); }
   function saveModels() { localStorage.setItem("tier-bench:active-models", JSON.stringify(activeModelIds)); setSelectorOpen(false); }

@@ -32,6 +32,7 @@ test("the public catalog contract keeps canonical imported IDs and upstream alia
   assert.equal(model.canonicalSlug, "acme/frontier");
   assert.equal(model.apiId, "acme/frontier:latest");
   assert.equal(model.releasedAt, "2026-08-20");
+  assert.equal(model.releasedAtTimestamp, "2026-08-20T12:00:00.000Z");
   assert.deepEqual(model.inputModalities, ["text", "image"]);
 });
 
@@ -81,4 +82,12 @@ test("newest catalog model is selected from fetched release dates", () => {
     { ...models[0], id: "openrouter/new-model", name: "New Model", release: "Aug 28, 2026" },
   ]);
   assert.equal(newest.id, "openrouter/new-model");
+});
+
+test("newest catalog model preserves exact timestamps for same-day releases", () => {
+  const newest = newestCatalogModel([
+    { ...models[0], id: "earlier", release: "2026-08-28T09:00:00.000Z" },
+    { ...models[0], id: "later", release: "2026-08-28T18:00:00.000Z" },
+  ]);
+  assert.equal(newest.id, "later");
 });

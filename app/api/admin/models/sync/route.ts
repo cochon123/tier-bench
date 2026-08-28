@@ -100,7 +100,7 @@ export async function POST(request: Request) {
             is_default = false,
             active = true,
             created_at = coalesce(${model.createdAt}::timestamptz, model_catalog.created_at),
-            released_at = coalesce(${model.createdAt}::timestamptz, model_catalog.released_at),
+            released_at = coalesce(model_catalog.released_at, ${model.createdAt}::timestamptz),
             last_seen_at = ${syncStartedAt}::timestamptz,
             updated_at = now()
         `;
