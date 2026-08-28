@@ -125,7 +125,8 @@ export function logoUrlForProvider(provider: string): string | null {
   const key = provider.trim().toLowerCase();
   if (!key || key === "unknown") return null;
   if (localProviderLogos[key]) return localProviderLogos[key];
-  const domain = providerDomains[key] || `${key.replace(/[^a-z0-9]+/g, "")}.com`;
+  const domain = providerDomains[key];
+  if (!domain) return null;
   return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`;
 }
 

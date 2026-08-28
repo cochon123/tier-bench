@@ -26,7 +26,7 @@ test("catalog removes the manufacturer prefix and keeps its logo metadata", () =
   assert.equal(plan.models[0].name, "GLM 5.3 Flash");
   assert.equal(plan.models[0].provider, "Z.ai");
   assert.equal(plan.models[0].logoUrl, "/logos/zai.png");
-  assert.equal(logoUrlForProvider("Unknown New Lab"), "https://www.google.com/s2/favicons?domain=unknownnewlab.com&sz=128");
+  assert.equal(logoUrlForProvider("Unknown New Lab"), null);
 });
 
 test("catalog reconciliation refuses a truncated upstream response", () => {

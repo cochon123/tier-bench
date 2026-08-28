@@ -10,6 +10,7 @@ export type CatalogApiModel = {
   name: string;
   provider: string;
   releasedAt: string;
+  releasedAtTimestamp?: string;
   contextWindow: string;
   pricing: string;
   description: string;
@@ -61,6 +62,12 @@ function dateOnly(value: string | Date | null): string {
   return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
 }
 
+function dateTime(value: string | Date | null): string | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
 export function catalogRowToApiModel(row: CatalogRow): CatalogApiModel {
   const id = row.default_model_id ?? row.canonical_slug;
   const pricing = row.pricing ?? (row.pricing_json && Object.keys(row.pricing_json).length ? JSON.stringify(row.pricing_json) : "");
@@ -71,6 +78,7 @@ export function catalogRowToApiModel(row: CatalogRow): CatalogApiModel {
     name: row.name,
     provider: row.provider,
     releasedAt: dateOnly(row.released_at),
+    releasedAtTimestamp: dateTime(row.released_at),
     contextWindow: row.context_window ?? (row.context_length ? String(row.context_length) : ""),
     pricing,
     description: row.description ?? "",
@@ -90,6 +98,7 @@ export function defaultCatalogApiModels(): CatalogApiModel[] {
     name: model.name,
     provider: model.maker,
     releasedAt: dateOnly(model.release),
+    releasedAtTimestamp: dateTime(model.release),
     contextWindow: model.context,
     pricing: model.price,
     description: model.description,
@@ -120,7 +129,7 @@ export function catalogModel(model: CatalogApiModel): Model {
     maker: provider,
     mark,
     color: `hsl(${hash % 360} 45% 42%)`,
-    release: model.releasedAt || "Release date unavailable",
+    release: model.releasedAtTimestamp || model.releasedAt || "Release date unavailable",
     context: model.contextWindow || "Unavailable",
     price: model.pricing || "Unavailable",
     description: model.description || "Catalog model metadata is unavailable.",
