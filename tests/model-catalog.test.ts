@@ -6,6 +6,7 @@ import {
   defaultCatalogApiModels,
   defaultModelIds,
   mergeCatalogModels,
+  newestCatalogModel,
 } from "../app/lib/model-catalog.ts";
 
 test("the public catalog contract keeps canonical imported IDs and upstream aliases", () => {
@@ -68,8 +69,16 @@ test("catalog imports are optional while the shipped 18 remain the defaults", ()
     context: "131072",
     price: "$1 / $3",
     description: "An imported model",
-    logo: undefined,
+    logo: "https://cdn.simpleicons.org/acme",
     inputModalities: ["text"],
     outputModalities: ["text"],
   });
+});
+
+test("newest catalog model is selected from fetched release dates", () => {
+  const newest = newestCatalogModel([
+    { ...models[0], release: "Aug 18, 2026" },
+    { ...models[0], id: "openrouter/new-model", name: "New Model", release: "Aug 28, 2026" },
+  ]);
+  assert.equal(newest.id, "openrouter/new-model");
 });

@@ -35,7 +35,7 @@ export function ModelMark({ model, small = false }: { model: Model; small?: bool
   const logoColors: Record<string, string> = { Anthropic: "#f5efe9", OpenAI: "#050505", Google: "#050505", DeepSeek: "#4f6ff0", Meta: "#0866ff", "xAI": "#050505", Mistral: "#f15a24", Qwen: "transparent", "Moonshot AI": "transparent", Xiaomi: "#ff6900", "Z.ai": "#171717" };
   const lightLogo = ["OpenAI", "DeepSeek", "Meta", "xAI", "Mistral", "Xiaomi", "Z.ai"].includes(model.maker);
   const squareLogo = ["Qwen", "Moonshot AI"].includes(model.maker);
-  return <span className={`model-mark ${small ? "small" : ""} ${lightLogo ? "logo-light" : ""} ${squareLogo ? "square-logo" : ""}`} style={{ background: model.logo ? (logoColors[model.maker] ?? "#fff") : model.color }} aria-hidden="true">{model.logo ? <img src={model.logo} alt="" /> : model.mark}</span>;
+  return <span className={`model-mark ${small ? "small" : ""} ${lightLogo ? "logo-light" : ""} ${squareLogo ? "square-logo" : ""}`} style={{ background: model.logo ? (logoColors[model.maker] ?? "#fff") : model.color }} aria-hidden="true">{model.logo ? <><span className="model-mark-fallback">{model.mark}</span><img src={model.logo} alt="" onError={(event) => { event.currentTarget.style.display = "none"; }} /></> : model.mark}</span>;
 }
 
 export function ModelPill({ model, score, rank, compact = false }: { model: Model; score?: number; rank?: number; compact?: boolean }) {

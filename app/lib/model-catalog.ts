@@ -1,5 +1,6 @@
 import { models } from "../data.ts";
 import type { Model } from "../data.ts";
+import { logoUrlForProvider } from "./openrouter-catalog.ts";
 
 /** Public model shape returned by catalog-backed API endpoints. */
 export type CatalogApiModel = {
@@ -40,6 +41,15 @@ export type CatalogRow = {
 
 export const defaultModelIds = models.map((model) => model.id);
 export const defaultModelIdSet = new Set(defaultModelIds);
+
+function releaseTime(model: Model): number {
+  const time = new Date(model.release).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+export function newestCatalogModel(candidates: Model[]): Model {
+  return [...candidates].sort((left, right) => releaseTime(right) - releaseTime(left))[0] ?? models[0];
+}
 
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
@@ -114,7 +124,7 @@ export function catalogModel(model: CatalogApiModel): Model {
     context: model.contextWindow || "Unavailable",
     price: model.pricing || "Unavailable",
     description: model.description || "Catalog model metadata is unavailable.",
-    logo: model.logoUrl || undefined,
+    logo: model.logoUrl || logoUrlForProvider(provider) || undefined,
     inputModalities: stringArray(model.inputModalities),
     outputModalities: stringArray(model.outputModalities),
   };

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   assertSafeCatalogReconciliation,
   buildCatalogSyncPlan,
+  logoUrlForProvider,
 } from "../app/lib/openrouter-catalog.ts";
 import { enforceRetiredModelPolicy, normalizeCatalogPlacements } from "../app/api/_lib/validation.ts";
 import { boardsAcross } from "../app/api/v1/_lib/history.ts";
@@ -18,6 +19,14 @@ test("catalog keeps text models, creation time, and canonical identity", () => {
   assert.equal(plan.models[0].canonicalSlug, "acme/chat");
   assert.equal(plan.models[0].apiId, "acme/chat:alias");
   assert.equal(plan.models[0].createdAt, "2023-11-14T22:13:21.000Z");
+});
+
+test("catalog removes the manufacturer prefix and keeps its logo metadata", () => {
+  const plan = buildCatalogSyncPlan([{ id: "z-ai/glm-5.3-flash", canonical_slug: "z-ai/glm-5.3-flash-20260826", name: "Z.ai: GLM 5.3 Flash", architecture: { output_modalities: ["text"] } }], 1);
+  assert.equal(plan.models[0].name, "GLM 5.3 Flash");
+  assert.equal(plan.models[0].provider, "Z.ai");
+  assert.equal(plan.models[0].logoUrl, "/logos/zai.png");
+  assert.equal(logoUrlForProvider("Unknown New Lab"), "https://cdn.simpleicons.org/unknownnewlab");
 });
 
 test("catalog reconciliation refuses a truncated upstream response", () => {
