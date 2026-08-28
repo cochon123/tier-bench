@@ -69,7 +69,7 @@ test("catalog imports are optional while the shipped 18 remain the defaults", ()
     context: "131072",
     price: "$1 / $3",
     description: "An imported model",
-    logo: "https://cdn.simpleicons.org/acme",
+    logo: "https://www.google.com/s2/favicons?domain=acmeai.com&sz=128",
     inputModalities: ["text"],
     outputModalities: ["text"],
   });

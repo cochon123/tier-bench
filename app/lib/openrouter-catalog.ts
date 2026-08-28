@@ -113,12 +113,20 @@ const localProviderLogos: Record<string, string> = {
   moonshotai: "/logos/kimi-avatar.png", xiaomi: "/logos/xiaomi.svg", "z.ai": "/logos/zai.png", zai: "/logos/zai.png",
 };
 
+const providerDomains: Record<string, string> = {
+  "amazon bedrock": "amazon.com", amazon: "amazon.com", microsoft: "microsoft.com",
+  cohere: "cohere.com", ibm: "ibm.com", tencent: "tencent.com", alibaba: "alibabacloud.com",
+  "black forest labs": "bfl.ai", bytedance: "bytedance.com", perplexity: "perplexity.ai",
+  cerebras: "cerebras.ai", groq: "groq.com", nvidia: "nvidia.com", reka: "reka.ai",
+  "01.ai": "01.ai", minimax: "minimax.io", stepfun: "stepfun.com", inflection: "inflection.ai",
+};
+
 export function logoUrlForProvider(provider: string): string | null {
   const key = provider.trim().toLowerCase();
   if (!key || key === "unknown") return null;
   if (localProviderLogos[key]) return localProviderLogos[key];
-  const slug = key.replace(/[^a-z0-9]+/g, "").replace(/ai$/, "");
-  return slug ? `https://cdn.simpleicons.org/${slug}` : null;
+  const domain = providerDomains[key] || `${key.replace(/[^a-z0-9]+/g, "")}.com`;
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`;
 }
 
 function stringArray(value: string[] | null | undefined): string[] {
