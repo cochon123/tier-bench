@@ -35,6 +35,7 @@ export type NormalizedCatalogModel = {
   apiId: string;
   name: string;
   provider: string;
+  logoUrl: string | null;
   description: string | null;
   createdAt: string | null;
   contextLength: number | null;
@@ -97,10 +98,36 @@ function parseCreatedAt(created: OpenRouterModel["created"]): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-function providerFor(model: OpenRouterModel, canonicalSlug: string): string {
-  const provider = canonicalSlug.split("/", 1)[0]?.trim();
-  if (provider) return provider;
-  return model.id.split("/", 1)[0]?.trim() || "unknown";
+function splitModelName(model: OpenRouterModel): { provider: string; name: string } {
+  const rawName = typeof model.name === "string" && model.name.trim() ? model.name.trim() : model.id.trim();
+  const prefix = rawName.match(/^([^:]{2,48}):\s+(.+)$/);
+  if (prefix) return { provider: prefix[1].trim(), name: prefix[2].trim() };
+  const providerSlug = model.canonical_slug?.split("/", 1)[0]?.trim() || model.id.split("/", 1)[0]?.trim();
+  return { provider: providerSlug || "unknown", name: rawName };
+}
+
+const localProviderLogos: Record<string, string> = {
+  anthropic: "/logos/claude-color.png", openai: "/logos/openai.svg", google: "/logos/google.svg",
+  deepseek: "/logos/deepseek.svg", meta: "/logos/meta.svg", xai: "/logos/x.svg",
+  mistral: "/logos/mistralai.svg", qwen: "/logos/qwen-avatar.jpg", "moonshot ai": "/logos/kimi-avatar.png",
+  moonshotai: "/logos/kimi-avatar.png", xiaomi: "/logos/xiaomi.svg", "z.ai": "/logos/zai.png", zai: "/logos/zai.png",
+};
+
+const providerDomains: Record<string, string> = {
+  "amazon bedrock": "amazon.com", amazon: "amazon.com", microsoft: "microsoft.com",
+  cohere: "cohere.com", ibm: "ibm.com", tencent: "tencent.com", alibaba: "alibabacloud.com",
+  "black forest labs": "bfl.ai", bytedance: "bytedance.com", perplexity: "perplexity.ai",
+  cerebras: "cerebras.ai", groq: "groq.com", nvidia: "nvidia.com", reka: "reka.ai",
+  "01.ai": "01.ai", minimax: "minimax.io", stepfun: "stepfun.com", inflection: "inflection.ai",
+};
+
+export function logoUrlForProvider(provider: string): string | null {
+  const key = provider.trim().toLowerCase();
+  if (!key || key === "unknown") return null;
+  if (localProviderLogos[key]) return localProviderLogos[key];
+  const domain = providerDomains[key];
+  if (!domain) return null;
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`;
 }
 
 function stringArray(value: string[] | null | undefined): string[] {
@@ -119,11 +146,13 @@ function pricingRecord(value: OpenRouterModel["pricing"]): Record<string, string
 export function normalizeModel(model: OpenRouterModel): NormalizedCatalogModel | null {
   if (!model || typeof model.id !== "string" || !model.id.trim()) return null;
   const canonicalSlug = (typeof model.canonical_slug === "string" && model.canonical_slug.trim()) || model.id.trim();
+  const display = splitModelName(model);
   return {
     canonicalSlug,
     apiId: model.id.trim(),
-    name: (typeof model.name === "string" && model.name.trim()) || model.id.trim(),
-    provider: providerFor(model, canonicalSlug),
+    name: display.name,
+    provider: display.provider,
+    logoUrl: logoUrlForProvider(display.provider),
     description: typeof model.description === "string" ? model.description : null,
     createdAt: parseCreatedAt(model.created),
     contextLength: typeof model.context_length === "number" && Number.isFinite(model.context_length) ? model.context_length : null,

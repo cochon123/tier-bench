@@ -3,17 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
-import { categories, Model, models, Tier, tierForScore, tierMeta } from "./data";
+import { categories, Model, Tier, tierForScore, tierMeta } from "./data";
 import { Footer, Header, ModelMark, RollingNumber } from "./components";
-import { defaultModelIds } from "./lib/model-catalog";
+import { defaultModelIds, newestCatalogModel } from "./lib/model-catalog";
 import { useCommunityCount } from "./use-community-count";
 import { useModelCatalog } from "./use-model-catalog";
 
 function TierCard({ model }: { model: Model & { score: number; voters: number; tier: Tier } }) {
   return <Link href={`/models/${encodeURIComponent(model.id)}`} className={`tier-card tier-${model.tier.toLowerCase()}`}><ModelMark model={model} small /><strong>{model.name}</strong></Link>;
 }
-
-const newestModel = [...models].sort((a, b) => new Date(b.release).getTime() - new Date(a.release).getTime())[0];
 
 type CommunityScore = { score: number; voters: number };
 
@@ -33,6 +31,7 @@ function BenchmarkPanel({ item, availableModels, activeModelIds, scores, selecte
 export default function Home() {
   const { user } = useUser();
   const { availableModels } = useModelCatalog();
+  const newestModel = useMemo(() => newestCatalogModel(availableModels), [availableModels]);
   const [rankedNewest, setRankedNewest] = useState(false);
   const [category, setCategory] = useState("overall");
   const [activeModelIds, setActiveModelIds] = useState<string[]>(() => [...defaultModelIds]);

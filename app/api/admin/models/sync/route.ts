@@ -67,13 +67,13 @@ export async function POST(request: Request) {
         if (aliasOwner.length) throw new Error(`OpenRouter alias collision: ${model.apiId} is already owned by ${aliasOwner[0].canonical_slug}`);
         await tx`
           insert into model_catalog (
-            id, canonical_slug, api_id, name, provider, context_window,
+            id, canonical_slug, api_id, name, provider, context_window, logo_url,
             context_length, pricing, pricing_json, description, modality,
             input_modalities, output_modalities, metadata, raw, source,
             status, active, created_at, released_at, last_seen_at, updated_at
           ) values (
             ${model.canonicalSlug}, ${model.canonicalSlug}, ${model.apiId},
-            ${model.name}, ${model.provider}, ${model.contextLength === null ? null : String(model.contextLength)},
+            ${model.name}, ${model.provider}, ${model.contextLength === null ? null : String(model.contextLength)}, ${model.logoUrl},
             ${model.contextLength}, ${JSON.stringify(model.pricing)}, ${JSON.stringify(model.pricing)},
             ${model.description}, ${model.modality}, ${tx.json(JSON.parse(JSON.stringify(model.inputModalities)))},
             ${tx.json(JSON.parse(JSON.stringify(model.outputModalities)))}, ${tx.json(JSON.parse(JSON.stringify({ topProvider: model.topProvider, perRequestLimits: model.perRequestLimits, supportedParameters: model.supportedParameters })))},
@@ -84,6 +84,7 @@ export async function POST(request: Request) {
             api_id = excluded.api_id,
             name = excluded.name,
             provider = excluded.provider,
+            logo_url = excluded.logo_url,
             context_window = excluded.context_window,
             context_length = excluded.context_length,
             pricing = excluded.pricing,

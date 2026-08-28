@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth, useClerk } from "@clerk/nextjs";
-import { categories, Model, models, Tier, tierMeta } from "../data";
+import { categories, Model, Tier, tierMeta } from "../data";
 import { Header, ModelMark } from "../components";
+import { newestCatalogModel } from "../lib/model-catalog";
 import type { CatalogApiModel } from "../lib/model-catalog";
 import { Turnstile, turnstileEnabled } from "../turnstile";
 import { useModelCatalog } from "../use-model-catalog";
@@ -15,8 +16,6 @@ type DropPreview = { tier: Tier | null; targetModelId?: string; afterTarget: boo
 const tiers = Object.keys(tierMeta) as Tier[];
 const storageKey = (category: string) => `tier-bench:ballot:${category}`;
 const orderStorageKey = (category: string) => `tier-bench:ballot-order:${category}`;
-const newestModel = [...models].sort((a, b) => new Date(b.release).getTime() - new Date(a.release).getTime())[0];
-
 function RankCard({ model, dragging, onDragStart, onDragEnd, onTouchStart, onTouchMove, onTouchEnd, onCycle }: { model: Model; dragging: boolean; onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void; onDragEnd: () => void; onTouchStart: (event: React.PointerEvent<HTMLButtonElement>) => void; onTouchMove: (event: React.PointerEvent<HTMLButtonElement>) => void; onTouchEnd: (event: React.PointerEvent<HTMLButtonElement>) => void; onCycle: () => void }) {
   return <button className={`tier-card rank-card ${dragging ? "is-dragging" : ""}`} data-model-id={model.id} draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onPointerDown={onTouchStart} onPointerMove={onTouchMove} onPointerUp={onTouchEnd} onPointerCancel={onDragEnd} onClick={onCycle} title="Drag to a tier or between two models to reorder; tap to cycle tiers">
     <ModelMark model={model} small />
@@ -61,6 +60,7 @@ export default function RankPage() {
   const automaticSaveStarted = useRef(false);
   const saveInFlight = useRef(false);
   const { availableModels, catalogLoading } = useModelCatalog(pinnedModels);
+  const newestModel = useMemo(() => newestCatalogModel(availableModels), [availableModels]);
   const retiredModelIds = useMemo(() => new Set(pinnedModels.filter((model) => model.status !== "active").map((model) => model.id)), [pinnedModels]);
   const rankedCount = Object.values(placements).filter(Boolean).length;
 
