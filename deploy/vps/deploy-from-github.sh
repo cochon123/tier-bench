@@ -124,7 +124,7 @@ fi
 
 host_health_ready="false"
 for _attempt in {1..15}; do
-  if curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${app_port}/api/health" >/dev/null; then
+  if curl --fail --silent --show-error --max-time 5 "http://localhost:${app_port}/api/health" >/dev/null; then
     host_health_ready="true"
     break
   fi
