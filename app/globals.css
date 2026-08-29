@@ -289,8 +289,11 @@ footer a { color:#ddd; }
 .model-picker-list { display:grid; gap:7px; max-height:280px; overflow:auto; margin-bottom:18px; }
 .model-picker-list label { display:flex; align-items:center; gap:10px; padding:10px; border:1px solid #30302d; cursor:pointer; }
 .model-picker-list label:has(input:checked) { border-color:var(--acid); background:#151711; }
+.remove-model-picker { position:relative; }
+.remove-model-picker .modal-close { position:absolute; top:14px; right:14px; float:none; width:32px; height:32px; display:grid; place-items:center; z-index:2; }
 .remove-model-picker>p { margin:0; }
-.remove-model-list { display:grid; gap:7px; max-height:310px; overflow:auto; }
+.remove-model-list { display:grid; gap:7px; max-height:310px; overflow:auto; scrollbar-width:none; }
+.remove-model-list::-webkit-scrollbar { display:none; }
 .remove-model-list>button { display:flex; align-items:center; gap:10px; min-width:0; padding:9px; border:1px solid #30302d; background:#111; color:var(--ink); text-align:left; cursor:pointer; }
 .remove-model-list>button:hover,.remove-model-list>button:focus-visible { border-color:#b75b5b; background:#1b1111; outline:0; }
 .remove-model-list>button>.model-mark { width:35px; height:35px; min-width:35px; flex:0 0 35px; overflow:hidden; border-radius:7px; }
@@ -502,11 +505,13 @@ footer a { color:#ddd; }
   .rank-workspace .unranked { margin-top:12px; padding:10px 9px 8px; }
   .rank-workspace .bench-content { display:block; }
   .rank-workspace .unranked-list { min-height:50px; gap:6px; padding-top:8px; }
-  .rank-workspace .add-model-card { width:48px; min-width:48px; min-height:44px; height:44px; }
-  .rank-workspace .trash-model-card { width:48px; min-width:48px; min-height:44px; height:44px; }
-  .rank-workspace .bench-tools { justify-content:flex-end; gap:6px; margin-top:8px; padding:0; }
+  .rank-workspace .bench-tools { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; gap:8px; margin-top:10px; padding:0; }
+  .rank-workspace .add-model-card,
+  .rank-workspace .trash-model-card { width:100%; min-width:0; min-height:52px; height:52px; border-radius:8px; }
   .modal-backdrop { padding:10px; }
   .remove-model-picker { display:flex; max-height:calc(100dvh - 20px); flex-direction:column; padding:20px; }
+  .remove-model-picker .modal-close { top:10px; right:10px; }
+  .remove-model-picker>.section-index { padding-right:38px; }
   .remove-model-picker h2 { font-size:25px; }
   .remove-model-picker>input { margin-top:14px; }
   .remove-model-list { min-height:0; flex:1; }
