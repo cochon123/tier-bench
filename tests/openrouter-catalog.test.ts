@@ -5,7 +5,7 @@ import {
   buildCatalogSyncPlan,
   logoUrlForProvider,
 } from "../app/lib/openrouter-catalog.ts";
-import { enforceRetiredModelPolicy, normalizeCatalogPlacements } from "../app/api/_lib/validation.ts";
+import { enforceRetiredModelPolicy, normalizeCatalogPlacements, validatePlacements } from "../app/api/_lib/validation.ts";
 import { boardsAcross } from "../app/api/v1/_lib/history.ts";
 
 test("catalog keeps text models, creation time, and canonical identity", () => {
@@ -53,6 +53,36 @@ test("ballot aliases collapse to one stable canonical identity", () => {
   assert.match(normalizeCatalogPlacements({ "vendor/model": "S", "vendor/model:latest": "A" }, catalog).error ?? "", /Conflicting placements/);
   const collision = [...catalog, { id: "other", canonical_slug: "other", api_id: "vendor/model:latest", default_model_id: null }];
   assert.match(normalizeCatalogPlacements({ "vendor/model:latest": "S" }, collision).error ?? "", /Ambiguous model alias/);
+});
+
+test("ballot parsing accepts opaque OpenRouter IDs before catalog validation", () => {
+  const result = validatePlacements({
+    "~z-ai/glm-latest": "S",
+    "vendor/model@preview+fast": "A",
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.deepEqual(result.placements, {
+    "~z-ai/glm-latest": "S",
+    "vendor/model@preview+fast": "A",
+  });
+  assert.equal(result.rankedCount, 2);
+});
+
+test("ballot parsing still rejects unsafe structural IDs", () => {
+  for (const placements of [{ "": "S" }, { "vendor/model\u0000suffix": "S" }, { ["x".repeat(201)]: "S" }]) {
+    const result = validatePlacements(placements);
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.error, /Invalid model id/);
+  }
+});
+
+test("ballot parsing treats prototype-shaped IDs as ordinary data", () => {
+  const result = validatePlacements(JSON.parse('{"__proto__":"S"}'));
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(Object.hasOwn(result.placements, "__proto__"), true);
+  assert.equal(result.placements.__proto__, "S");
 });
 
 test("a maximum multi-category history request executes one database query", async () => {
