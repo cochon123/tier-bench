@@ -1,0 +1,57 @@
+name: Deploy production
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: tier-bench-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://tierbench.calgarypermit.ca
+    steps:
+      - name: Deploy the tested commit to the VPS
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$VPS_SSH_PRIVATE_KEY"
+          test -n "$VPS_SSH_KNOWN_HOSTS"
+          test "${#RELEASE_SHA}" -eq 40
+
+          ssh_dir=$(mktemp -d)
+          trap 'rm -rf "$ssh_dir"' EXIT
+          install -m 0600 /dev/null "$ssh_dir/id_ed25519"
+          install -m 0600 /dev/null "$ssh_dir/known_hosts"
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" >"$ssh_dir/id_ed25519"
+          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" >"$ssh_dir/known_hosts"
+
+          ssh -F /dev/null \
+            -i "$ssh_dir/id_ed25519" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            tierdeploy@187.124.144.206 \
+            "$RELEASE_SHA"
+
+      - name: Verify the public application
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 \
+            https://tierbench.calgarypermit.ca/api/health

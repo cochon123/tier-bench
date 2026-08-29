@@ -44,6 +44,23 @@ public interface. A managed database URL works as well.
 
 ## Release
 
+Pushes to `main` are deployed automatically after the `CI` workflow succeeds.
+The `Deploy production` workflow connects with the restricted `tierdeploy` SSH
+key and asks the root-owned `/usr/local/sbin/deploy-tier-bench` hook to deploy
+the exact tested commit. The hook accepts only a full commit SHA that belongs to
+`origin/main`, serializes releases with `flock`, builds an immutable image, runs
+migrations, replaces the container, and checks its health. If the new container
+does not become healthy, it restores the previous commit and image.
+
+The repository secrets `VPS_SSH_PRIVATE_KEY` and `VPS_SSH_KNOWN_HOSTS` contain
+the restricted deploy key and the pinned VPS host key. Rotate the deploy key by
+replacing `/home/tierdeploy/.ssh/authorized_keys` and both repository secrets.
+The server hook source and its sudo policy live in `deploy/vps/` and must be
+installed as root when either server-side file changes.
+
+For a manual release or recovery, run the following from the release directory
+on the VPS.
+
 From the release directory on the VPS:
 
 ```sh
