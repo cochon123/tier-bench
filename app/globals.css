@@ -457,7 +457,8 @@ footer a { color:#ddd; }
 .rank-workspace .unranked { margin-top:14px; padding:12px 12px 10px; }
 .rank-workspace .unranked h3 { margin:0; }
 .rank-workspace .bench-content { align-items:flex-end; }
-.rank-workspace .unranked-list { min-width:0; flex:1; flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; min-height:54px; padding:9px 0 3px; overscroll-behavior-inline:contain; scrollbar-width:thin; scrollbar-color:#4a4a45 #171717; scroll-snap-type:x proximity; }
+.rank-workspace .unranked-list { min-width:0; flex:1; flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; min-height:54px; padding:9px 0 3px; overscroll-behavior-inline:contain; scrollbar-width:none; scroll-snap-type:x proximity; }
+.rank-workspace .unranked-list::-webkit-scrollbar { display:none; }
 .rank-workspace .unranked-list > * { flex:0 0 auto; scroll-snap-align:start; }
 .rank-workspace .add-model-card { width:54px; min-width:54px; min-height:48px; height:48px; border-radius:9px; }
 .rank-workspace .bench-tools { padding-bottom:3px; }
