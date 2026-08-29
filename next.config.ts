@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   agentRules: false,
-  allowedDevOrigins: ["home.tailb9c821.ts.net"],
+  allowedDevOrigins: ["home.tailb9c821.ts.net", "localhost", "127.0.0.1", "100.88.135.1"],
   output: "standalone",
   turbopack: {
     root: process.cwd(),

@@ -16,8 +16,8 @@ type DropPreview = { tier: Tier | null; targetModelId?: string; afterTarget: boo
 const tiers = Object.keys(tierMeta) as Tier[];
 const storageKey = (category: string) => `tier-bench:ballot:${category}`;
 const orderStorageKey = (category: string) => `tier-bench:ballot-order:${category}`;
-function RankCard({ model, dragging, onDragStart, onDragEnd, onTouchStart, onTouchMove, onTouchEnd, onCycle }: { model: Model; dragging: boolean; onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void; onDragEnd: () => void; onTouchStart: (event: React.PointerEvent<HTMLButtonElement>) => void; onTouchMove: (event: React.PointerEvent<HTMLButtonElement>) => void; onTouchEnd: (event: React.PointerEvent<HTMLButtonElement>) => void; onCycle: () => void }) {
-  return <button className={`tier-card rank-card ${dragging ? "is-dragging" : ""}`} data-model-id={model.id} draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onPointerDown={onTouchStart} onPointerMove={onTouchMove} onPointerUp={onTouchEnd} onPointerCancel={onDragEnd} onClick={onCycle} title="Drag to a tier or between two models to reorder; tap to cycle tiers">
+function RankCard({ model, dragging, onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onCycle }: { model: Model; dragging: boolean; onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => void; onPointerMove: (event: React.PointerEvent<HTMLButtonElement>) => void; onPointerUp: (event: React.PointerEvent<HTMLButtonElement>) => void; onPointerCancel: (event: React.PointerEvent<HTMLButtonElement>) => void; onCycle: () => void }) {
+  return <button className={`tier-card rank-card ${dragging ? "is-dragging" : ""}`} data-model-id={model.id} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerCancel} onClick={onCycle} title="Drag to a tier or between two models to reorder; tap to cycle tiers">
     <ModelMark model={model} small />
     <span className="model-copy"><strong>{model.name}</strong></span>
   </button>;
@@ -54,7 +54,7 @@ export default function RankPage() {
   const [saving, setSaving] = useState(false);
   const [phoneLayout, setPhoneLayout] = useState(false);
   const draggedModel = useRef<string | null>(null);
-  const touchDrag = useRef<{ modelId: string; moved: boolean } | null>(null);
+  const pointerDrag = useRef<{ modelId: string; pointerId: number; startX: number; startY: number; moved: boolean } | null>(null);
   const suppressNextClick = useRef(false);
   const freshCategory = useRef<string | null>(null);
   const automaticSaveStarted = useRef(false);
@@ -124,7 +124,6 @@ export default function RankPage() {
       setBoardLoading(false);
       return () => controller.abort();
     }
-    setBoardLoading(true);
     const local = localStorage.getItem(storageKey(category));
     const localOrder = localStorage.getItem(orderStorageKey(category));
     let localDraft: Placements = {};
@@ -140,6 +139,19 @@ export default function RankPage() {
     setPlacements(localDraft);
     setSubmitted(false);
     setNotice("");
+    // Visitors are intentionally allowed to build a local ballot before
+    // signing in. Do not wait on an authenticated request in that mode.
+    if (!authLoaded || !isSignedIn) {
+      setBoardLoading(false);
+      return () => controller.abort();
+    }
+
+    setBoardLoading(true);
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 8000);
     fetch(`/api/rankings?category=${encodeURIComponent(category)}`, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) return;
@@ -153,10 +165,18 @@ export default function RankPage() {
         setSubmitted(data.placements !== null);
         localStorage.setItem(storageKey(category), JSON.stringify(saved));
       })
-      .catch(() => {})
-      .finally(() => { if (!controller.signal.aborted) setBoardLoading(false); });
-    return () => controller.abort();
-  }, [category]);
+      .catch(() => {
+        if (timedOut) setNotice("The saved board took too long to load. Your local ballot is still available.");
+      })
+      .finally(() => {
+        window.clearTimeout(timeout);
+        if (!controller.signal.aborted || timedOut) setBoardLoading(false);
+      });
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [authLoaded, category, isSignedIn]);
 
   const byTier = useMemo(() => {
     const result: Record<Tier | "unranked", Model[]> = { S: [], A: [], B: [], C: [], D: [], F: [], unranked: [] };
@@ -250,15 +270,9 @@ export default function RankPage() {
     void submitRanking(pendingSave.category, pendingSave.placements).then((saved) => { if (saved) finishPendingSave(); });
   }, [authLoaded, boardLoading, isSignedIn, pendingSave, turnstileToken]);
 
-  function startDrag(modelId: string, event: React.DragEvent<HTMLButtonElement>) {
-    draggedModel.current = modelId;
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", modelId);
-  }
-
   function finishDrag() {
     draggedModel.current = null;
-    touchDrag.current = null;
+    pointerDrag.current = null;
     setOver(null);
     setDropPreview(null);
   }
@@ -305,18 +319,18 @@ export default function RankPage() {
     return container ? previewForContainer(tier, container, clientX, clientY) : { tier, afterTarget: false };
   }
 
-  function startTouchDrag(modelId: string, event: React.PointerEvent<HTMLButtonElement>) {
-    if (event.pointerType !== "touch") return;
-    touchDrag.current = { modelId, moved: false };
+  function startPointerDrag(modelId: string, event: React.PointerEvent<HTMLButtonElement>) {
+    if (!event.isPrimary || event.button !== 0) return;
+    pointerDrag.current = { modelId, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false };
     draggedModel.current = modelId;
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
-  function moveTouchDrag(event: React.PointerEvent<HTMLButtonElement>) {
-    const drag = touchDrag.current;
-    if (!drag) return;
+  function movePointerDrag(event: React.PointerEvent<HTMLButtonElement>) {
+    const drag = pointerDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
     if (!drag.moved) {
-      const distance = Math.hypot(event.clientX - event.currentTarget.getBoundingClientRect().left - event.currentTarget.clientWidth / 2, event.clientY - event.currentTarget.getBoundingClientRect().top - event.currentTarget.clientHeight / 2);
+      const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
       if (distance < 8) return;
       drag.moved = true;
     }
@@ -325,9 +339,9 @@ export default function RankPage() {
     if (target) showDropPreview(target);
   }
 
-  function endTouchDrag(event: React.PointerEvent<HTMLButtonElement>) {
-    const drag = touchDrag.current;
-    if (!drag) return;
+  function endPointerDrag(event: React.PointerEvent<HTMLButtonElement>) {
+    const drag = pointerDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
     if (drag.moved) {
       event.preventDefault();
       suppressNextClick.current = true;
@@ -339,22 +353,16 @@ export default function RankPage() {
     finishDrag();
   }
 
+  function cancelPointerDrag(event: React.PointerEvent<HTMLButtonElement>) {
+    if (pointerDrag.current?.pointerId === event.pointerId) finishDrag();
+  }
+
   function cycleFromCard(modelId: string) {
     if (suppressNextClick.current) {
       suppressNextClick.current = false;
       return;
     }
     cycle(modelId);
-  }
-
-  function drop(tier: Tier | null, event: React.DragEvent<HTMLElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    const modelId = event.dataTransfer.getData("text/plain") || draggedModel.current;
-    const container = event.currentTarget.querySelector<HTMLElement>(tier === null ? ".unranked-list" : ".editor-dropzone");
-    const target = container ? previewForContainer(tier, container, event.clientX, event.clientY) : { tier, afterTarget: false };
-    if (modelId && availableModels.some((model) => model.id === modelId)) placeAndOrder(modelId, tier, target.targetModelId, target.afterTarget);
-    finishDrag();
   }
 
   function cycle(modelId: string) {
@@ -423,7 +431,7 @@ export default function RankPage() {
     const cards = [];
     for (const model of modelsInTier) {
       if (preview?.targetModelId === model.id && !preview.afterTarget && placeholder) cards.push(placeholder);
-      cards.push(<RankCard key={model.id} model={model} dragging={draggedModel.current === model.id} onDragStart={(event) => startDrag(model.id, event)} onDragEnd={finishDrag} onTouchStart={(event) => startTouchDrag(model.id, event)} onTouchMove={moveTouchDrag} onTouchEnd={endTouchDrag} onCycle={() => cycleFromCard(model.id)} />);
+      cards.push(<RankCard key={model.id} model={model} dragging={draggedModel.current === model.id} onPointerDown={(event) => startPointerDrag(model.id, event)} onPointerMove={movePointerDrag} onPointerUp={endPointerDrag} onPointerCancel={cancelPointerDrag} onCycle={() => cycleFromCard(model.id)} />);
       if (preview?.targetModelId === model.id && preview.afterTarget && placeholder) cards.push(placeholder);
     }
     if (preview && !preview.targetModelId && placeholder) cards.push(placeholder);
@@ -443,13 +451,13 @@ export default function RankPage() {
       {boardLoading && <div className="notice">Loading your saved {categories.find((item) => item.slug === category)?.name} board…</div>}
       {!boardLoading && notice && <div className="notice">{notice}</div>}
       <div className="rank-help"><span>Drag models between tiers. Within-tier order is kept for your personal view.</span><button onClick={reset}>Reset ballot</button></div>
-      <div className="editor-board">{tiers.map((tier) => <div className={`editor-row ${over === tier ? "drag-over" : ""}`} data-drop-tier={tier} key={tier} onDragEnter={(event) => { event.preventDefault(); setOver(tier); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; const container = event.currentTarget.querySelector<HTMLElement>(".editor-dropzone"); if (container) showDropPreview(previewForContainer(tier, container, event.clientX, event.clientY)); }} onDrop={(event) => drop(tier, event)}>
+      <div className="editor-board">{tiers.map((tier) => <div className={`editor-row ${over === tier ? "drag-over" : ""}`} data-drop-tier={tier} key={tier}>
         <div className="editor-label" style={{ background: tierMeta[tier].color }}>{tier}</div>
         <div className="editor-dropzone">
           {renderRankCards(byTier[tier], tier)}
         </div>
       </div>)}</div>
-      <div className={`unranked ${over === "unranked" ? "drag-over" : ""}`} data-drop-tier="unranked" onDragEnter={(event) => { event.preventDefault(); setOver("unranked"); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; const container = event.currentTarget.querySelector<HTMLElement>(".unranked-list"); if (container) showDropPreview(previewForContainer(null, container, event.clientX, event.clientY)); }} onDrop={(event) => drop(null, event)}><div className="bench-heading"><h3>On the bench · unranked</h3><span>{byTier.unranked.length} models · scroll to explore</span></div><div className="unranked-list">{renderRankCards(byTier.unranked, null)}<button type="button" className="add-model-card" onClick={openModelPicker} aria-label="Add a model to this board">+</button></div></div>
+      <div className={`unranked ${over === "unranked" ? "drag-over" : ""}`} data-drop-tier="unranked"><div className="bench-heading"><h3>On the bench · unranked</h3><span>{byTier.unranked.length} models · scroll to explore</span></div><div className="unranked-list">{renderRankCards(byTier.unranked, null)}<button type="button" className="add-model-card" onClick={openModelPicker} aria-label="Add a model to this board">+</button></div></div>
       <section className="criteria-suggestions"><span className="section-index">Keep going</span><h2>Rank the same models by another lens.</h2><p>Your personal opinion changes with the job. Open another private board for a criterion that matters to you.</p><input className="criteria-search" value={categorySearch} onChange={(event) => setCategorySearch(event.target.value)} placeholder="Search all categories..." aria-label="Search all categories" /><div className="criteria-suggestion-grid">{categories.filter((item) => item.slug !== category && `${item.name} ${item.short} ${item.prompt}`.toLowerCase().includes(categorySearch.toLowerCase())).map((item) => <button type="button" onClick={() => { setCategory(item.slug); history.replaceState(null, "", `/rank?category=${item.slug}`); document.querySelector(".rank-sidebar")?.scrollIntoView({ behavior: "smooth" }); }} className="criteria-suggestion" key={item.slug}><strong>{item.name}</strong><span>{item.short}</span><small>{item.prompt}</small><b>Open board ↗</b></button>)}</div><Link className="text-link" href="/proposals">Suggest a new criterion ↗</Link></section>
     </section>
   </main>
