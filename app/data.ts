@@ -66,12 +66,12 @@ const logoByMaker: Record<string, string> = {
 models.forEach((model) => { model.logo = logoByMaker[model.maker]; });
 
 export const tierMeta = {
-  S: { label: "S", color: "#ff625f", score: 6 },
-  A: { label: "A", color: "#ff9f45", score: 5 },
-  B: { label: "B", color: "#ffd36b", score: 4 },
-  C: { label: "C", color: "#69cfa0", score: 3 },
-  D: { label: "D", color: "#ae74ec", score: 2 },
-  F: { label: "F", color: "#ec64aa", score: 1 },
+  S: { label: "S", color: "#f26a5b", score: 6 },
+  A: { label: "A", color: "#eea15b", score: 5 },
+  B: { label: "B", color: "#dbc86a", score: 4 },
+  C: { label: "C", color: "#62c99a", score: 3 },
+  D: { label: "D", color: "#9a83d1", score: 2 },
+  F: { label: "F", color: "#d26fa7", score: 1 },
 } as const;
 
 export type Tier = keyof typeof tierMeta;

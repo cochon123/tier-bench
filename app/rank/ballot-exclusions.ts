@@ -32,11 +32,11 @@ export function omitExcludedPlacements<T extends BallotPlacements>(placements: T
 }
 
 export function restoreExcludedPlacements<T extends BallotPlacements>(saved: T, source: T, excludedModelIds: Iterable<string>): T {
-  const next = { ...saved };
+  const next: BallotPlacements = { ...saved };
   for (const id of excludedModelIds) {
     if (Object.prototype.hasOwnProperty.call(source, id)) next[id] = source[id];
   }
-  return next;
+  return next as T;
 }
 
 export function countRankedPlacements(placements: BallotPlacements, excludedModelIds: Iterable<string>): number {
