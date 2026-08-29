@@ -9,7 +9,7 @@ import { newestCatalogModel } from "../lib/model-catalog";
 import type { CatalogApiModel } from "../lib/model-catalog";
 import { Turnstile, turnstileEnabled } from "../turnstile";
 import { useModelCatalog } from "../use-model-catalog";
-import { authoredBallotOrigin, ballotDraftOriginStorageKey, ballotOriginAfterUndo, countRankedPlacements, excludedModelStorageKey, hasAuthoredLocalBallot, omitExcludedPlacements, parseExcludedModelIds, serverBallotOrigin } from "./ballot-exclusions";
+import { authoredBallotOrigin, ballotDraftOriginStorageKey, ballotOriginAfterUndo, countRankedPlacements, excludedModelStorageKey, hasAuthoredLocalBallot, omitExcludedPlacements, parseExcludedModelIds, restoreExcludedPlacements, serverBallotOrigin } from "./ballot-exclusions";
 import { clearPendingBallotSave, PendingBallotSave, readPendingBallotSave, storePendingBallotSave } from "./pending-save";
 
 type Placements = Record<string, Tier | null>;
@@ -202,7 +202,7 @@ export default function RankPage() {
         // A browser draft may predate sign-in. Never replace the work the user
         // can currently see with an older server revision behind their back.
         if (hasLocalDraft) return;
-        const saved = data.placements ?? {};
+        const saved = restoreExcludedPlacements(data.placements ?? {}, localDraft, localExcludedIds);
         setPlacements(saved);
         setSubmitted(data.placements !== null);
         localStorage.setItem(storageKey(category), JSON.stringify(saved));
@@ -269,9 +269,10 @@ export default function RankPage() {
       const data = await response.json().catch(() => null) as { placements?: Placements; error?: string } | null;
       if (response.ok) {
         const saved = data?.placements ?? submittedPlacements;
-        localStorage.setItem(storageKey(targetCategory), JSON.stringify(saved));
+        const localPlacements = targetCategory === category ? restoreExcludedPlacements(saved, targetPlacements, excludedModelIds) : saved;
+        localStorage.setItem(storageKey(targetCategory), JSON.stringify(localPlacements));
         localStorage.setItem(ballotDraftOriginStorageKey(targetCategory), serverBallotOrigin);
-        if (targetCategory === category) { setPlacements(saved); setSubmitted(true); }
+        if (targetCategory === category) { setPlacements(localPlacements); setSubmitted(true); }
         setNotice("Saved. Your ballot now contributes to this category’s global score.");
         return true;
       } else {
@@ -437,12 +438,6 @@ export default function RankPage() {
     if (!model) return;
     const hadPlacement = Object.prototype.hasOwnProperty.call(placements, modelId);
     const tier = placements[modelId] ?? null;
-    setPlacements((current) => {
-      const next = { ...current };
-      delete next[modelId];
-      localStorage.setItem(storageKey(category), JSON.stringify(next));
-      return next;
-    });
     setExcludedModelIds((current) => {
       const next = current.includes(modelId) ? current : [...current, modelId];
       localStorage.setItem(excludedModelStorageKey(category), JSON.stringify(next));
@@ -454,12 +449,21 @@ export default function RankPage() {
   }
 
   function restoreModel(modelId: string) {
+    const remembered = recentlyRemoved?.id === modelId ? recentlyRemoved : null;
     setExcludedModelIds((current) => {
       const next = current.filter((id) => id !== modelId);
       if (next.length) localStorage.setItem(excludedModelStorageKey(category), JSON.stringify(next));
       else localStorage.removeItem(excludedModelStorageKey(category));
       return next;
     });
+    if (remembered?.hadPlacement && !Object.prototype.hasOwnProperty.call(placements, modelId)) {
+      setPlacements((current) => {
+        const next = { ...current, [modelId]: remembered.tier };
+        localStorage.setItem(storageKey(category), JSON.stringify(next));
+        return next;
+      });
+    }
+    if (remembered) setRecentlyRemoved(null);
     setSubmitted(false);
   }
 
@@ -513,7 +517,7 @@ export default function RankPage() {
     localStorage.setItem(ballotDraftOriginStorageKey(category), authoredBallotOrigin);
     setPlacements((current) => {
       const next = { ...current };
-      pendingModelIds.forEach((id) => { next[id] = null; });
+      pendingModelIds.forEach((id) => { if (!(id in next)) next[id] = null; });
       localStorage.setItem(storageKey(category), JSON.stringify(next));
       return next;
     });
@@ -555,6 +559,13 @@ export default function RankPage() {
     setShareOpen(false);
   }
 
+  const removeQuery = removeSearch.toLowerCase();
+  const matchesRemoveQuery = (model: Model) => `${model.name} ${model.maker} ${model.id}`.toLowerCase().includes(removeQuery);
+  const hiddenPickerModels = [...excludedModelIds].reverse()
+    .map((id) => availableModels.find((model) => model.id === id))
+    .filter((model): model is Model => Boolean(model) && matchesRemoveQuery(model));
+  const visiblePickerModels = Object.values(byTier).flat().filter(matchesRemoveQuery);
+
   function renderRankCards(modelsInTier: Model[], tier: Tier | null) {
     const preview = dropPreview?.tier === tier ? dropPreview : null;
     const dragged = draggedModel.current ? availableModels.find((model) => model.id === draggedModel.current) : undefined;
@@ -570,15 +581,13 @@ export default function RankPage() {
   }
 
   return <><Header /><main className="page-shell rank-layout">
-    <aside className="rank-sidebar">
-      <span className="section-index">Your ballot</span><h2>Rank what you know.</h2><p>Leave unfamiliar models on the bench. Tap a card to cycle tiers, or drag it exactly where it belongs. Models you hide stay hidden only for this board in this browser.</p>
-      {!placements[newestModel.id] && !excludedModels.has(newestModel.id) && <div className="new-model-prompt"><span className="section-index">New on the board</span><strong>{newestModel.name}</strong><small>{newestModel.release} · {newestModel.description}</small><button className="button acid" onClick={rankNewest}>Propose a rank <span>↗</span></button></div>}
-      <label htmlFor="category">Board</label><select id="category" value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}</select>
-      <div className="progress-track"><span style={{ width: `${Math.min(100, rankedCount / 5 * 100)}%` }} /></div><div className="progress-copy"><span>{rankedCount} ranked</span><span>{rankedCount >= 5 ? "ready to submit" : `${5 - rankedCount} to submit`}</span></div>
-      <Turnstile key={turnstileGeneration} onToken={setTurnstileToken} />
-      <div className="rank-actions">{rankedCount > 0 && <button className="button acid" disabled={!authLoaded || saving || boardLoading || rankedCount < 5 || (Boolean(isSignedIn) && turnstileEnabled && !turnstileToken)} onClick={requestSave}>{saving ? "Saving…" : submitted ? "Update saved list" : "Save tier list"} <span>↗</span></button>}<button className="button" title={!submitted ? "Save this draft before sharing" : undefined} disabled={!mounted || saving || boardLoading || rankedCount < 5 || !submitted || (turnstileEnabled && !turnstileToken)} onClick={() => setShareOpen(true)}>{submitted ? "Share" : "Save before sharing"} <span>↗</span></button></div>
-    </aside>
     <section className="rank-workspace" id="personal-editor">
+      <div className="rank-overview">
+        <div className="rank-overview-copy">
+          <h1>Rank what you know.</h1>
+          {!placements[newestModel.id] && !excludedModels.has(newestModel.id) && <div className="new-model-prompt"><span className="section-index">New on the board</span><strong>{newestModel.name}</strong><small>{newestModel.release} · {newestModel.description}</small><button className="button acid" onClick={rankNewest}>Propose a rank <span>↗</span></button></div>}
+        </div>
+      </div>
       {boardLoading && <div className="notice">Loading your saved {categories.find((item) => item.slug === category)?.name} board…</div>}
       {!boardLoading && notice && <div className="notice">{notice}</div>}
       <div className="rank-help"><span>Drag models between tiers. Within-tier order is kept for your personal view.</span><button onClick={reset}><svg viewBox="0 0 1920 1920" aria-hidden="true"><path fillRule="evenodd" d="M960 0v213.333c411.627 0 746.667 334.934 746.667 746.667S1371.627 1706.667 960 1706.667 213.333 1371.733 213.333 960c0-197.013 78.4-382.507 213.334-520.747v254.08H640V106.667H53.333V320h191.04C88.64 494.08 0 720.96 0 960c0 529.28 430.613 960 960 960s960-430.72 960-960S1489.387 0 960 0" /></svg>Reset ballot</button></div>
@@ -589,12 +598,13 @@ export default function RankPage() {
         </div>
       </div>)}</div>
       <div className={`unranked ${over === "unranked" ? "drag-over" : ""}`} data-drop-tier="unranked"><div className="bench-content"><div className="unranked-list">{renderRankCards(byTier.unranked, null)}</div><div className="bench-tools"><button type="button" className="add-model-card" onClick={openModelPicker} aria-label="Add a model to this board">+</button><button type="button" className={`trash-model-card ${over === "trash" ? "drag-over" : ""}`} data-drop-trash onClick={openRemovePicker} aria-label="Choose models to hide from this board in this browser. You can also drag a model here." title="Choose a model to hide, or drag one here"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" /></svg></button></div></div>{recentlyRemoved && <div className="removal-notice" role="status" aria-live="polite"><span>{recentlyRemoved.name} hidden from this board in this browser.</span><button type="button" onClick={undoRemove}>Undo</button></div>}</div>
-      <section className="criteria-suggestions"><span className="section-index">Keep going</span><h2>Rank the same models by another lens.</h2><p>Your personal opinion changes with the job. Open another private board for a criterion that matters to you.</p><input className="criteria-search" value={categorySearch} onChange={(event) => setCategorySearch(event.target.value)} placeholder="Search all categories..." aria-label="Search all categories" /><div className="criteria-suggestion-grid">{categories.filter((item) => item.slug !== category && `${item.name} ${item.short} ${item.prompt}`.toLowerCase().includes(categorySearch.toLowerCase())).map((item) => <button type="button" onClick={() => { setCategory(item.slug); history.replaceState(null, "", `/rank?category=${item.slug}`); document.querySelector(".rank-sidebar")?.scrollIntoView({ behavior: "smooth" }); }} className="criteria-suggestion" key={item.slug}><strong>{item.name}</strong><span>{item.short}</span><small>{item.prompt}</small><b>Open board ↗</b></button>)}</div><Link className="text-link" href="/proposals">Suggest a new criterion ↗</Link></section>
+      <div className="rank-submit"><Turnstile key={turnstileGeneration} onToken={setTurnstileToken} /><div className="rank-actions">{rankedCount > 0 && <button className="button acid" disabled={!authLoaded || saving || boardLoading || rankedCount < 5 || (Boolean(isSignedIn) && turnstileEnabled && !turnstileToken)} onClick={requestSave}>{saving ? "Saving…" : submitted ? "Update saved list" : "Save tier list"} <span>↗</span></button>}<button className="button" title={!submitted ? "Save this draft before sharing" : undefined} disabled={!mounted || saving || boardLoading || rankedCount < 5 || !submitted || (turnstileEnabled && !turnstileToken)} onClick={() => setShareOpen(true)}>{submitted ? "Share" : "Save before sharing"} <span>↗</span></button></div></div>
+      <section className="criteria-suggestions"><span className="section-index">Keep going</span><h2>Rank the same models by another lens.</h2><p>Your personal opinion changes with the job. Open another private board for a criterion that matters to you.</p><input className="criteria-search" value={categorySearch} onChange={(event) => setCategorySearch(event.target.value)} placeholder="Search all categories..." aria-label="Search all categories" /><div className="criteria-suggestion-grid">{categories.filter((item) => item.slug !== category && `${item.name} ${item.short} ${item.prompt}`.toLowerCase().includes(categorySearch.toLowerCase())).map((item) => <button type="button" onClick={() => { setCategory(item.slug); history.replaceState(null, "", `/rank?category=${item.slug}`); document.querySelector("#personal-editor")?.scrollIntoView({ behavior: "smooth", block: "start" }); }} className="criteria-suggestion" key={item.slug}><strong>{item.name}</strong><span>{item.short}</span><small>{item.prompt}</small><b>Open board ↗</b></button>)}</div><Link className="text-link" href="/proposals">Suggest a new criterion ↗</Link></section>
     </section>
   </main>
   {shareOpen && <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal"><button className="modal-close" onClick={() => setShareOpen(false)}>×</button><span className="section-index">Share this revision</span><h2>Make it permanent.</h2><p>Each share is an immutable database snapshot. Future ballot edits won’t change it.</p><div className="modal-options"><button onClick={createShare}><strong>Copy a link</strong><small>Create a durable snapshot URL and copy it.</small></button><button onClick={savePicture}><strong>Save a picture</strong><small>Download a 1200 × 630 vector image.</small></button></div></div></div>}
   {modelPickerOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="add-model-title"><div className="modal model-picker"><button className="modal-close" onClick={() => setModelPickerOpen(false)}>×</button><span className="section-index">Add models</span><h2 id="add-model-title">Choose what belongs on the bench.</h2><input autoFocus value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="Search models…" aria-label="Search models" /><div className="model-picker-list">{availableModels.filter((model) => !retiredModelIds.has(model.id) && (excludedModels.has(model.id) || !(starterModelIds.has(model.id) || model.id in placements)) && `${model.name} ${model.maker} ${model.id}`.toLowerCase().includes(modelSearch.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name)).map((model) => <label key={model.id}><input type="checkbox" checked={pendingModelIds.includes(model.id)} onChange={() => setPendingModelIds((current) => current.includes(model.id) ? current.filter((id) => id !== model.id) : [...current, model.id])} /><ModelMark model={model} small /><span>{model.name}</span></label>)}{catalogLoading && <p>Loading the OpenRouter catalog…</p>}{!catalogLoading && availableModels.every((model) => retiredModelIds.has(model.id) || (!excludedModels.has(model.id) && (starterModelIds.has(model.id) || model.id in placements))) && <p>Every available model is already on this board.</p>}</div><button className="button acid" disabled={pendingModelIds.length === 0} onClick={addSelectedModels}>Done <span>↗</span></button></div></div>}
-  {removePickerOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="remove-model-title"><div className="modal model-picker remove-model-picker"><button className="modal-close" onClick={() => setRemovePickerOpen(false)} aria-label="Close remove-model picker">×</button><span className="section-index">Hide models locally</span><h2 id="remove-model-title">Not part of your ranking?</h2><p>Choose models to hide from this criterion on this browser. This does not delete them globally or hide them on your other devices.</p><input autoFocus value={removeSearch} onChange={(event) => setRemoveSearch(event.target.value)} placeholder="Search this board…" aria-label="Search models on this board" /><div className="remove-model-list">{Object.values(byTier).flat().filter((model) => `${model.name} ${model.maker} ${model.id}`.toLowerCase().includes(removeSearch.toLowerCase())).map((model) => <button type="button" key={model.id} onClick={() => removeFromBallot(model.id)}><ModelMark model={model} small /><span><strong>{model.name}</strong><small>{placements[model.id] ?? "Unranked"}</small></span><b>Hide</b></button>)}{availableModels.filter((model) => excludedModels.has(model.id) && `${model.name} ${model.maker} ${model.id}`.toLowerCase().includes(removeSearch.toLowerCase())).map((model) => <button type="button" className="restore-model" key={`restore-${model.id}`} onClick={() => restoreModel(model.id)}><ModelMark model={model} small /><span><strong>{model.name}</strong><small>Hidden</small></span><b>Restore</b></button>)}{Object.values(byTier).flat().length === 0 && excludedModelIds.length === 0 && <p>No models remain on this board.</p>}</div></div></div>}
+  {removePickerOpen && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="remove-model-title"><div className="modal model-picker remove-model-picker"><button className="modal-close" onClick={() => setRemovePickerOpen(false)} aria-label="Close remove-model picker">×</button><span className="section-index">Hide models locally</span><h2 id="remove-model-title">Not part of your ranking?</h2><p>Choose models to hide from this criterion on this browser. This does not delete them globally or hide them on your other devices.</p><input autoFocus value={removeSearch} onChange={(event) => setRemoveSearch(event.target.value)} placeholder="Search this board…" aria-label="Search models on this board" /><div className="remove-model-list">{hiddenPickerModels.map((model) => <button type="button" className="restore-model" key={`restore-${model.id}`} onClick={() => restoreModel(model.id)}><ModelMark model={model} small /><span><strong>{model.name}</strong><small>Hidden</small></span><b>Restore</b></button>)}{visiblePickerModels.map((model) => <button type="button" key={model.id} onClick={() => removeFromBallot(model.id)}><ModelMark model={model} small /><span><strong>{model.name}</strong><small>{placements[model.id] ?? "Unranked"}</small></span><b>Hide</b></button>)}{visiblePickerModels.length === 0 && excludedModelIds.length === 0 && <p>No models remain on this board.</p>}</div></div></div>}
   {contextMenu && <div className="model-context-menu" role="menu" style={{ left: contextMenu.x, top: contextMenu.y }}><button type="button" role="menuitem" onClick={() => { removeFromBallot(contextMenu.modelId); setContextMenu(null); }}>Hide</button></div>}
   </>;
 }

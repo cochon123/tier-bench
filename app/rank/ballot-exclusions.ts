@@ -31,6 +31,14 @@ export function omitExcludedPlacements<T extends BallotPlacements>(placements: T
   return next;
 }
 
+export function restoreExcludedPlacements<T extends BallotPlacements>(saved: T, source: T, excludedModelIds: Iterable<string>): T {
+  const next = { ...saved };
+  for (const id of excludedModelIds) {
+    if (Object.prototype.hasOwnProperty.call(source, id)) next[id] = source[id];
+  }
+  return next;
+}
+
 export function countRankedPlacements(placements: BallotPlacements, excludedModelIds: Iterable<string>): number {
   const excluded = new Set(excludedModelIds);
   return Object.entries(placements).filter(([id, tier]) => tier && !excluded.has(id)).length;

@@ -7,6 +7,7 @@ import {
   hasAuthoredLocalBallot,
   omitExcludedPlacements,
   parseExcludedModelIds,
+  restoreExcludedPlacements,
   serverBallotOrigin,
 } from "../app/rank/ballot-exclusions.ts";
 
@@ -40,6 +41,16 @@ test("excluded placements are omitted from counts and saves", () => {
     "model/bench": null,
   });
   assert.deepEqual(placements, { "model/removed": "S", "model/kept": "A", "model/bench": null });
+});
+
+test("hidden placements are kept locally so restore can return a model to its tier", () => {
+  const source = { "model/removed": "C", "model/kept": "A", "model/bench": null };
+  const saved = { "model/kept": "A", "model/bench": null };
+  assert.deepEqual(restoreExcludedPlacements(saved, source, ["model/removed"]), {
+    "model/kept": "A",
+    "model/bench": null,
+    "model/removed": "C",
+  });
 });
 
 test("stored excluded IDs are safely parsed and de-duplicated", () => {
