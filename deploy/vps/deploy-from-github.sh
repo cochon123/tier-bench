@@ -122,7 +122,16 @@ if [[ ! "$app_port" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-if ! curl --fail --silent --show-error --max-time 15 "http://127.0.0.1:${app_port}/api/health" >/dev/null; then
+host_health_ready="false"
+for _attempt in {1..15}; do
+  if curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${app_port}/api/health" >/dev/null; then
+    host_health_ready="true"
+    break
+  fi
+  sleep 2
+done
+
+if [[ "$host_health_ready" != "true" ]]; then
   compose "$RELEASE_TAG" logs --since=10m app >&2 || true
   rollback_application
   exit 1
