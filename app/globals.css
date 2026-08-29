@@ -151,7 +151,7 @@ footer a { color:#ddd; }
 .rank-help { display:flex; justify-content:space-between; color:#777; font-size:11px; margin-bottom:20px; }
 .rank-help button { background:none; border:0; color:#aaa; text-decoration:underline; cursor:pointer; }
 .rank-help button { display:inline-flex; align-items:center; gap:6px; }
-.rank-help button svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; text-decoration:none; }
+.rank-help button svg { width:14px; height:14px; fill:currentColor; text-decoration:none; }
 .focused-rank-card { display:contents; }
 .focused-rank-card > .rank-card { border-color:#4d9cff; box-shadow:0 0 0 2px rgba(77,156,255,.28); }
 .model-context-menu { position:fixed; z-index:100; min-width:100px; padding:4px; border:1px solid #454541; border-radius:6px; background:#171717; box-shadow:0 8px 24px rgba(0,0,0,.45); }
