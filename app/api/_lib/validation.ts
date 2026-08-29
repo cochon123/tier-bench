@@ -15,12 +15,19 @@ export function validatePlacements(value: unknown): { ok: true; placements: Ball
   const placements: BallotPlacements = {};
   let rankedCount = 0;
   for (const [modelId, tier] of entries) {
-    if (modelId.length > 200 || !/^[\w.:[\]/-]+$/.test(modelId)) return { ok: false, error: "Invalid model id" };
+    // Catalog IDs are upstream-owned opaque strings. Restrict their structure,
+    // not their punctuation: OpenRouter uses aliases such as `~z-ai/glm-latest`,
+    // and may introduce more valid punctuation independently of this release.
+    // The catalog lookup below this parser remains the authority on whether an
+    // ID exists and is selectable.
+    if (!modelId || modelId.length > 200 || /[\u0000-\u001f\u007f]/u.test(modelId)) return { ok: false, error: "Invalid model id" };
     // Models are allowed to come from the OpenRouter catalog, which may be
     // refreshed independently of the server bundle. Unknown ids are therefore
     // retained here; the catalog sync/admin layer decides visibility.
     if (tier !== null && (typeof tier !== "string" || !tiers.includes(tier as Tier))) return { ok: false, error: `Invalid tier for ${modelId}` };
-    placements[modelId] = tier as string | null;
+    // defineProperty treats special object keys (notably `__proto__`) as data,
+    // avoiding prototype setters before the catalog rejects unknown IDs.
+    Object.defineProperty(placements, modelId, { value: tier as string | null, enumerable: true, configurable: true, writable: true });
     if (tier !== null) rankedCount += 1;
   }
   return { ok: true, placements, rankedCount };
