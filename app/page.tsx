@@ -88,7 +88,7 @@ export default function Home() {
       <div className="landing-hero-copy">
         <h1>This is not a bench, it is people <em>actual experience.</em></h1>
         <p>tier/bench is a living, community-built guide to the AI models people actually use. Compare the main board, explore focused tierlist, and make a ranking that reflects your own work.</p>
-        <div className="landing-actions"><Link className="button acid landing-primary" href="/rank">{user ? rankedNewest ? "Go to your own tier list" : <>Rank the new {newestModel.name} <ModelMark model={newestModel} small /></> : <>Make your own tier list <span>↗</span></>}</Link></div>
+    <div className="landing-actions"><Link className="button acid landing-primary" href={user && !rankedNewest ? `/rank?focus=${encodeURIComponent(newestModel.id)}` : "/rank"}>{user ? rankedNewest ? "Go to your own tier list" : <>Rank the new {newestModel.name} <ModelMark model={newestModel} small /></> : <>Make your own tier list <span>↗</span></>}</Link></div>
       </div>
     </section>
     <section className="tier-toolbar" id="main-board"><div className="tier-title"><h1>AI model tier list</h1></div></section>
